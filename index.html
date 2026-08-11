@@ -360,8 +360,8 @@ function buildQuotationPDF(qt){
     doc.text(item.cat||"",x,y+4.5);x+=cols[2].w;
     doc.text(item.warranty||"",x,y+4.5);x+=cols[3].w;
     doc.text(String(item.qty),x+cols[4].w-2,y+4.5,{align:"right"});x+=cols[4].w;
-    doc.text(item.unitPrice.toFixed(3),x+cols[5].w-2,y+4.5,{align:"right"});x+=cols[5].w;
-    doc.text(item.total.toFixed(3),x+cols[6].w-2,y+4.5,{align:"right"});
+    doc.text(itemSellUnit(item).toFixed(3),x+cols[5].w-2,y+4.5,{align:"right"});x+=cols[5].w;
+    doc.text(itemSellTotal(item).toFixed(3),x+cols[6].w-2,y+4.5,{align:"right"});
     doc.setDrawColor(PDF_BDR);doc.setLineWidth(0.2);
     doc.line(MARGIN,y+rowH,PAGE_W-MARGIN,y+rowH);
     y+=rowH;
@@ -372,15 +372,17 @@ function buildQuotationPDF(qt){
   doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(PDF_MUT);
   doc.text("Subtotal",totalsX,y+5);
   doc.text(qt.subtotal.toFixed(3)+" BHD",PAGE_W-MARGIN,y+5,{align:"right"});
-  doc.text("Service Fee ("+((qt.serviceFeeRate||4.5))+"%)",totalsX,y+10.5);
-  doc.text(qt.serviceFee.toFixed(3)+" BHD",PAGE_W-MARGIN,y+10.5,{align:"right"});
+  doc.text("Delivery",totalsX,y+10.5);
+  doc.text((qt.deliveryFee||0).toFixed(3)+" BHD",PAGE_W-MARGIN,y+10.5,{align:"right"});
+  doc.text("Service Fee",totalsX,y+16);
+  doc.text(qt.serviceFee.toFixed(3)+" BHD",PAGE_W-MARGIN,y+16,{align:"right"});
   doc.setDrawColor(PDF_DARK);doc.setLineWidth(0.3);
-  doc.line(totalsX,y+13.5,PAGE_W-MARGIN,y+13.5);
+  doc.line(totalsX,y+19,PAGE_W-MARGIN,y+19);
   doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(PDF_DARK);
-  doc.text("TOTAL DUE",totalsX,y+20);
+  doc.text("TOTAL DUE",totalsX,y+25.5);
   doc.setTextColor(PDF_RED);
-  doc.text(qt.total.toFixed(3)+" BHD",PAGE_W-MARGIN,y+20,{align:"right"});
-  y+=28;
+  doc.text(qt.total.toFixed(3)+" BHD",PAGE_W-MARGIN,y+25.5,{align:"right"});
+  y+=33;
 
   if(!isInvoice){
     if(y>PAGE_H-70){doc.addPage();pageNum++;y=MARGIN;}
@@ -490,22 +492,22 @@ function allMemberPins(){
 
 // ── PARTS DATA ────────────────────────────────────────────────────────
 var PARTS = [
-  {id:1,name:"Toyota Genuine Oil Filter",nameAr:"فلتر زيت تويوتا أصلي",cat:"Filters",make:"Toyota",model:"Land Cruiser",yf:2018,yt:2025,waselPrice:4.800,retailPrice:5.500,type:"Genuine",brand:"Toyota",qty:24,warranty:"12 months"},
-  {id:2,name:"Nissan Genuine Brake Pads Front",nameAr:"تيل فرامل نيسان أصلي أمامي",cat:"Brakes",make:"Nissan",model:"Patrol",yf:2016,yt:2025,waselPrice:38.500,retailPrice:45.000,type:"Genuine",brand:"Nissan",qty:12,warranty:"12 months"},
-  {id:3,name:"BMW Genuine Alternator 180A",nameAr:"دينامو BMW أصلي 180A",cat:"Electronics",make:"BMW",model:"X5",yf:2019,yt:2024,waselPrice:285.000,retailPrice:330.000,type:"Genuine",brand:"BMW",qty:3,warranty:"24 months"},
-  {id:4,name:"Mercedes Genuine Radiator",nameAr:"رادياتور مرسيدس أصلي",cat:"Cooling",make:"Mercedes",model:"C-Class",yf:2018,yt:2023,waselPrice:320.000,retailPrice:380.000,type:"Genuine",brand:"Mercedes-Benz",qty:2,warranty:"24 months"},
-  {id:5,name:"Honda Genuine Timing Belt Kit",nameAr:"طقم تايمنغ هوندا أصلي",cat:"Engine",make:"Honda",model:"CR-V",yf:2017,yt:2022,waselPrice:95.000,retailPrice:115.000,type:"Genuine",brand:"Honda",qty:6,warranty:"12 months"},
-  {id:6,name:"Bosch Brake Pads — All Makes",nameAr:"تيل فرامل بوش جميع الماركات",cat:"Brakes",make:"Toyota",model:"Corolla",yf:2015,yt:2024,waselPrice:12.900,retailPrice:16.000,type:"Aftermarket",brand:"Bosch",qty:30,warranty:"6 months"},
-  {id:7,name:"Denso Spark Plugs Set 4x",nameAr:"شمعات دنسو طقم 4 حبة",cat:"Engine",make:"Nissan",model:"Altima",yf:2014,yt:2023,waselPrice:8.500,retailPrice:11.000,type:"Aftermarket",brand:"Denso",qty:40,warranty:"6 months"},
-  {id:8,name:"Mann Air Filter Premium",nameAr:"فلتر هواء مان بريميوم",cat:"Filters",make:"BMW",model:"3 Series",yf:2017,yt:2024,waselPrice:9.800,retailPrice:12.500,type:"Aftermarket",brand:"Mann",qty:18,warranty:"6 months"},
-  {id:9,name:"Gates Timing Belt",nameAr:"تايمنغ بيلت جيتس",cat:"Engine",make:"Honda",model:"Civic",yf:2016,yt:2022,waselPrice:22.000,retailPrice:27.000,type:"Aftermarket",brand:"Gates",qty:10,warranty:"12 months"},
-  {id:10,name:"TRW Front Shock Absorbers Pair",nameAr:"امورتيزير أمامي TRW زوج",cat:"Suspension",make:"Mercedes",model:"E-Class",yf:2016,yt:2023,waselPrice:78.000,retailPrice:95.000,type:"Aftermarket",brand:"TRW",qty:5,warranty:"12 months"},
-  {id:11,name:"Toyota Suspension Kit Front",nameAr:"طقم مقص تويوتا أمامي",cat:"Suspension",make:"Toyota",model:"Camry",yf:2018,yt:2024,waselPrice:145.000,retailPrice:175.000,type:"Genuine",brand:"Toyota",qty:4,warranty:"12 months"},
-  {id:12,name:"Castrol GTX 5W-40 Engine Oil 4L",nameAr:"زيت محرك كاسترول GTX 4 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2000,yt:2025,waselPrice:6.500,retailPrice:8.000,type:"Aftermarket",brand:"Castrol",qty:50,warranty:"N/A"},
-  {id:13,name:"Toyota Coolant Antifreeze 1L",nameAr:"سائل تبريد تويوتا 1 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2005,yt:2025,waselPrice:2.800,retailPrice:3.500,type:"Genuine",brand:"Toyota",qty:30,warranty:"N/A"},
-  {id:14,name:"Front Bumper — Toyota Camry 2019",nameAr:"بمبر أمامي تويوتا كامري 2019",cat:"Body Parts",make:"Toyota",model:"Camry",yf:2019,yt:2021,waselPrice:85.000,retailPrice:105.000,type:"Genuine",brand:"Toyota",qty:2,warranty:"3 months"},
-  {id:15,name:"Right Front Door — Nissan Patrol",nameAr:"باب أمامي يمين نيسان باترول",cat:"Body Parts",make:"Nissan",model:"Patrol",yf:2016,yt:2020,waselPrice:220.000,retailPrice:270.000,type:"Genuine",brand:"Nissan",qty:1,warranty:"3 months"},
-  {id:16,name:"Mobil 1 5W-30 Full Synthetic 4L",nameAr:"زيت موبيل 1 تخليقي كامل 4 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2000,yt:2025,waselPrice:9.200,retailPrice:11.500,type:"Aftermarket",brand:"Mobil",qty:24,warranty:"N/A"},
+  {id:1,name:"Toyota Genuine Oil Filter",nameAr:"فلتر زيت تويوتا أصلي",cat:"Filters",make:"Toyota",model:"Land Cruiser",yf:2018,yt:2025,waselPrice:4.800,retailPrice:5.500,type:"Genuine",brand:"Toyota",qty:24,warranty:"12 months",bulky:false},
+  {id:2,name:"Nissan Genuine Brake Pads Front",nameAr:"تيل فرامل نيسان أصلي أمامي",cat:"Brakes",make:"Nissan",model:"Patrol",yf:2016,yt:2025,waselPrice:38.500,retailPrice:45.000,type:"Genuine",brand:"Nissan",qty:12,warranty:"12 months",bulky:false},
+  {id:3,name:"BMW Genuine Alternator 180A",nameAr:"دينامو BMW أصلي 180A",cat:"Electronics",make:"BMW",model:"X5",yf:2019,yt:2024,waselPrice:285.000,retailPrice:330.000,type:"Genuine",brand:"BMW",qty:3,warranty:"24 months",bulky:false},
+  {id:4,name:"Mercedes Genuine Radiator",nameAr:"رادياتور مرسيدس أصلي",cat:"Cooling",make:"Mercedes",model:"C-Class",yf:2018,yt:2023,waselPrice:320.000,retailPrice:380.000,type:"Genuine",brand:"Mercedes-Benz",qty:2,warranty:"24 months",bulky:false},
+  {id:5,name:"Honda Genuine Timing Belt Kit",nameAr:"طقم تايمنغ هوندا أصلي",cat:"Engine",make:"Honda",model:"CR-V",yf:2017,yt:2022,waselPrice:95.000,retailPrice:115.000,type:"Genuine",brand:"Honda",qty:6,warranty:"12 months",bulky:false},
+  {id:6,name:"Bosch Brake Pads — All Makes",nameAr:"تيل فرامل بوش جميع الماركات",cat:"Brakes",make:"Toyota",model:"Corolla",yf:2015,yt:2024,waselPrice:12.900,retailPrice:16.000,type:"Aftermarket",brand:"Bosch",qty:30,warranty:"6 months",bulky:false},
+  {id:7,name:"Denso Spark Plugs Set 4x",nameAr:"شمعات دنسو طقم 4 حبة",cat:"Engine",make:"Nissan",model:"Altima",yf:2014,yt:2023,waselPrice:8.500,retailPrice:11.000,type:"Aftermarket",brand:"Denso",qty:40,warranty:"6 months",bulky:false},
+  {id:8,name:"Mann Air Filter Premium",nameAr:"فلتر هواء مان بريميوم",cat:"Filters",make:"BMW",model:"3 Series",yf:2017,yt:2024,waselPrice:9.800,retailPrice:12.500,type:"Aftermarket",brand:"Mann",qty:18,warranty:"6 months",bulky:false},
+  {id:9,name:"Gates Timing Belt",nameAr:"تايمنغ بيلت جيتس",cat:"Engine",make:"Honda",model:"Civic",yf:2016,yt:2022,waselPrice:22.000,retailPrice:27.000,type:"Aftermarket",brand:"Gates",qty:10,warranty:"12 months",bulky:false},
+  {id:10,name:"TRW Front Shock Absorbers Pair",nameAr:"امورتيزير أمامي TRW زوج",cat:"Suspension",make:"Mercedes",model:"E-Class",yf:2016,yt:2023,waselPrice:78.000,retailPrice:95.000,type:"Aftermarket",brand:"TRW",qty:5,warranty:"12 months",bulky:false},
+  {id:11,name:"Toyota Suspension Kit Front",nameAr:"طقم مقص تويوتا أمامي",cat:"Suspension",make:"Toyota",model:"Camry",yf:2018,yt:2024,waselPrice:145.000,retailPrice:175.000,type:"Genuine",brand:"Toyota",qty:4,warranty:"12 months",bulky:false},
+  {id:12,name:"Castrol GTX 5W-40 Engine Oil 4L",nameAr:"زيت محرك كاسترول GTX 4 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2000,yt:2025,waselPrice:6.500,retailPrice:8.000,type:"Aftermarket",brand:"Castrol",qty:50,warranty:"N/A",bulky:false},
+  {id:13,name:"Toyota Coolant Antifreeze 1L",nameAr:"سائل تبريد تويوتا 1 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2005,yt:2025,waselPrice:2.800,retailPrice:3.500,type:"Genuine",brand:"Toyota",qty:30,warranty:"N/A",bulky:false},
+  {id:14,name:"Front Bumper — Toyota Camry 2019",nameAr:"بمبر أمامي تويوتا كامري 2019",cat:"Body Parts",make:"Toyota",model:"Camry",yf:2019,yt:2021,waselPrice:85.000,retailPrice:105.000,type:"Genuine",brand:"Toyota",qty:2,warranty:"3 months",bulky:true},
+  {id:15,name:"Right Front Door — Nissan Patrol",nameAr:"باب أمامي يمين نيسان باترول",cat:"Body Parts",make:"Nissan",model:"Patrol",yf:2016,yt:2020,waselPrice:220.000,retailPrice:270.000,type:"Genuine",brand:"Nissan",qty:1,warranty:"3 months",bulky:true},
+  {id:16,name:"Mobil 1 5W-30 Full Synthetic 4L",nameAr:"زيت موبيل 1 تخليقي كامل 4 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2000,yt:2025,waselPrice:9.200,retailPrice:11.500,type:"Aftermarket",brand:"Mobil",qty:24,warranty:"N/A",bulky:false},
 ];
 
 var CATS = ["All","Engine","Brakes","Filters","Oils & Fluids","Suspension","Body Parts","Cooling","Electronics"];
@@ -551,7 +553,7 @@ var S = {
   invItems:[], invNote:"", invNewDesc:"", invNewCost:"", invNewMargin:"20", invNewQty:"1",
   invLogged:false, preloadParts:[],
   // supplier form
-  supForm:{name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:""},
+  supForm:{name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:"",bulky:false},
   pending:[],
   // admin
   adminAuth:false, adminPw:"", adminGenRef:"", adminGenRefs:[],
@@ -1001,17 +1003,20 @@ function renderCart(){
       del.style.marginLeft="8px";
       qc.appendChild(del);
       ci.appendChild(qc);
-      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD(item.part.waselPrice*item.qty)]));
+      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD(item.part.waselPrice*(1+(item.margin!=null?item.margin:20)/100)*item.qty)]));
       wrap.appendChild(ci);
     });
     var yourProfit=S.cart.reduce(function(a,i){return a+(i.part.waselPrice*((i.margin!=null?i.margin:20)/100))*i.qty;},0);
     wrap.appendChild(el("div",{className:"inv-profit-note",style:{marginBottom:"1rem"}},["💰 Set your margin per item above — your estimated profit on this order: "+fmtBHD(yourProfit)+". This is for your reference only — it never appears on the Wasel Auto quotation or on your customer's invoice."]));
     // Summary
     var sub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
+    var markedSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*(1+(i.margin!=null?i.margin:20)/100)*i.qty;},0);
     var fee=sub*0.045;
-    var total=sub+fee;
+    var isBulkyCart=S.cart.some(function(i){return !!i.part.bulky;});
+    var deliveryFeeCart=isBulkyCart?6:2;
+    var total=markedSub+fee+deliveryFeeCart;
     var cs=div("cart-summary");
-    [[S.ar?"المجموع الفرعي":"Subtotal",fmtBHD(sub)],[S.ar?"رسوم الخدمة (4.5%)":"Service Fee (4.5%)",fmtBHD(fee)]].forEach(function(r){
+    [[S.ar?"المجموع الفرعي":"Subtotal",fmtBHD(markedSub)],[S.ar?"التوصيل":"Delivery"+(isBulkyCart?" (bulky item)":""),fmtBHD(deliveryFeeCart)],[S.ar?"رسوم الخدمة":"Service Fee",fmtBHD(fee)]].forEach(function(r){
       cs.appendChild(div("summary-row",[el("span",{},[r[0]]),el("span",{style:{fontWeight:"600"}},[r[1]])]));
     });
     var gr=div("summary-row total");
@@ -1081,8 +1086,9 @@ function renderCart(){
 
 function buildQTWhatsApp(qt){
   var lines=["Hi Wasel Auto, here is my quotation request:","Ref: "+qt.ref,"Garage: "+(qt.garage.name||""),"Phone: "+(qt.garage.phone||""),""];
-  qt.items.forEach(function(it){lines.push("• "+it.name+" x"+it.qty+" — "+it.total.toFixed(3)+" BHD");});
+  qt.items.forEach(function(it){lines.push("• "+it.name+" x"+it.qty+" — "+itemSellTotal(it).toFixed(3)+" BHD");});
   lines.push("","Subtotal: "+qt.subtotal.toFixed(3)+" BHD");
+  lines.push("Delivery: "+(qt.deliveryFee||0).toFixed(3)+" BHD");
   lines.push("Service Fee: "+qt.serviceFee.toFixed(3)+" BHD");
   lines.push("TOTAL: "+qt.total.toFixed(3)+" BHD");
   lines.push("Deliver to: "+(qt.garage.address||"—"));
@@ -1092,20 +1098,25 @@ function buildQTWhatsApp(qt){
 }
 
 function generateQuotation(){
-  var sub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
-  var fee=sub*0.045;
-  var total=sub+fee;
+  var rawSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
+  var markedSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*(1+(i.margin!=null?i.margin:20)/100)*i.qty;},0);
+  var fee=rawSub*0.045;
+  var isBulky=S.cart.some(function(i){return !!i.part.bulky;});
+  var deliveryFee=isBulky?6:2;
+  var total=markedSub+fee+deliveryFee;
   var qt={
     ref:genRef("QT"),date:today(),status:"pending_payment",
     garage:Object.assign({},S.checkoutGarage),
     delivery:"Delivery after Benefit Pay confirmation",
-    items:S.cart.map(function(i){return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:i.part.waselPrice,total:i.part.waselPrice*i.qty,margin:i.margin!=null?i.margin:20};}),
-    subtotal:sub,serviceFee:fee,total:total,
+    items:S.cart.map(function(i){return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:i.part.waselPrice,total:i.part.waselPrice*i.qty,margin:i.margin!=null?i.margin:20,bulky:!!i.part.bulky};}),
+    subtotal:markedSub,serviceFee:fee,deliveryFee:deliveryFee,total:total,
     member:S.member?S.member.garageName:"Unknown",
   };
   var log=getLog("wasel_quotations");log.unshift(qt);saveLog("wasel_quotations",log);
   S.quotations=log;S.activeQT=qt;S.checkoutStep=2;render();
 }
+function itemSellUnit(item){return item.unitPrice*(1+(item.margin!=null?item.margin:20)/100);}
+function itemSellTotal(item){return itemSellUnit(item)*item.qty;}
 
 function renderQuotationDoc(qt){
   var isInvoice=qt.status==="paid";
@@ -1147,13 +1158,14 @@ function renderQuotationDoc(qt){
   var tbody=el("tbody",{});
   qt.items.forEach(function(item){
     var tr=el("tr",{});
-    [item.name,item.brand,item.cat,item.warranty,item.qty,item.unitPrice.toFixed(3),item.total.toFixed(3)].forEach(function(v){tr.appendChild(el("td",{},[v]));});
+    [item.name,item.brand,item.cat,item.warranty,item.qty,itemSellUnit(item).toFixed(3),itemSellTotal(item).toFixed(3)].forEach(function(v){tr.appendChild(el("td",{},[v]));});
     tbody.appendChild(tr);
   });
   tbl.appendChild(tbody);body.appendChild(tbl);
   var totbox=el("div",{style:{display:"flex",justifyContent:"flex-end"}});
   var tbox=div("pdf-totals-box");
-  [["Subtotal",qt.subtotal.toFixed(3)+" BHD"],["Service Fee (4.5%)",qt.serviceFee.toFixed(3)+" BHD"]].forEach(function(r){
+  var totalRows=[["Subtotal",qt.subtotal.toFixed(3)+" BHD"],["Delivery",(qt.deliveryFee||0).toFixed(3)+" BHD"],["Service Fee",qt.serviceFee.toFixed(3)+" BHD"]];
+  totalRows.forEach(function(r){
     var rr2=div("pdf-total-row");rr2.appendChild(el("span",{style:{color:"var(--mut)"}},[r[0]]));rr2.appendChild(el("span",{},[r[1]]));tbox.appendChild(rr2);
   });
   var gr=div("pdf-total-row grand");gr.appendChild(el("span",{},[isInvoice?"TOTAL PAID":"TOTAL DUE"]));gr.appendChild(el("span",{style:{color:isInvoice?"var(--grn)":"var(--red)"}},[qt.total.toFixed(3)+" BHD"]));tbox.appendChild(gr);
@@ -1480,6 +1492,7 @@ function renderSupplier(){
   g.appendChild(ig("Part Type",seldrop("",[{label:"Genuine"},{label:"Aftermarket"}],f.type,function(v){f.type=v;})));
   g.appendChild(ig("Quantity Available",inp("","e.g. 5",f.qty,function(v){f.qty=v;},{type:"number"})));
   g.appendChild(ig("Warranty",inp("","e.g. 12 months",f.warranty,function(v){f.warranty=v;})));
+  g.appendChild(ig("Delivery Size",seldrop("",[{val:"small",label:"Small (2 BHD delivery — most parts)"},{val:"bulky",label:"Bulky (6 BHD delivery — engine, gearbox, hood, trunk, bumper, door)"}],f.bulky?"bulky":"small",function(v){f.bulky=(v==="bulky");})));
   g.appendChild(el("div",{className:"ff"},[fsecT("Your Contact")]));
   g.appendChild(ig("WhatsApp Number",inp("","+973 XXXX XXXX",f.phone,function(v){f.phone=v;},{type:"tel",dir:"ltr"})));
   body.appendChild(g);
@@ -1490,7 +1503,7 @@ function renderSupplier(){
     var entry=Object.assign({},f,{id:"P"+Date.now(),submittedDate:today(),status:"pending_review"});
     var log=getLog("wasel_pending_parts");log.unshift(entry);saveLog("wasel_pending_parts",log);
     S.pending=log;
-    S.supForm={name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:""};
+    S.supForm={name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:"",bulky:false};
     S._supplierSent=true;render();
   }));
   return wrap;
@@ -1795,12 +1808,12 @@ function renderAdmin(){
   pending.forEach(function(p,idx){
     var card=div("pending-card");
     card.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.88rem"}},[p.name]));
-    card.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--mut)",margin:"4px 0"}},[p.make+" "+p.model+" ("+p.yf+"–"+p.yt+") · "+p.brand+" · "+p.price+" BHD · Qty "+p.qty]));
+    card.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--mut)",margin:"4px 0"}},[p.make+" "+p.model+" ("+p.yf+"–"+p.yt+") · "+p.brand+" · "+p.price+" BHD · Qty "+p.qty+" · "+(p.bulky?"🚛 Bulky (6 BHD delivery)":"📦 Small (2 BHD delivery)")]));
     card.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)"}},["Contact: "+p.phone]));
     var acts=div("",null,{style:{display:"flex",gap:"6px",marginTop:"8px"}});
     acts.appendChild(btn("btn-grn btn-sm","✓ Approve & List",function(){
       var extra=getLog("wasel_extra_parts");
-      extra.unshift({id:"E"+Date.now(),name:p.name,nameAr:p.nameAr||p.name,cat:p.cat,make:p.make,model:p.model,yf:parseInt(p.yf)||2000,yt:parseInt(p.yt)||2025,waselPrice:parseFloat(p.price)||0,retailPrice:(parseFloat(p.price)||0)*1.15,type:p.type,brand:p.brand,qty:parseInt(p.qty)||1,warranty:p.warranty});
+      extra.unshift({id:"E"+Date.now(),name:p.name,nameAr:p.nameAr||p.name,cat:p.cat,make:p.make,model:p.model,yf:parseInt(p.yf)||2000,yt:parseInt(p.yt)||2025,waselPrice:parseFloat(p.price)||0,retailPrice:(parseFloat(p.price)||0)*1.15,type:p.type,brand:p.brand,qty:parseInt(p.qty)||1,warranty:p.warranty,bulky:!!p.bulky});
       saveLog("wasel_extra_parts",extra);
       var newPending=pending.filter(function(x,i){return i!==idx;});
       saveLog("wasel_pending_parts",newPending);
