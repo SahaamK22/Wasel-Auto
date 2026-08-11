@@ -332,7 +332,7 @@ function buildQuotationPDF(qt){
     doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(PDF_GRN);
     doc.text("Invoice: "+qt.invoiceNum,PAGE_W-MARGIN,y-3,{align:"right"});
   }
-  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",qt.garage.name,[qt.garage.phone,qt.garage.address?("Deliver to: "+qt.garage.address):""].filter(Boolean));
+  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",qt.garage.name||"Customer",[qt.garage.phone||"",qt.garage.address?("Deliver to: "+qt.garage.address):""].filter(Boolean));
 
   var cols=[
     {label:"DESCRIPTION",w:52,align:"left"},
@@ -410,15 +410,33 @@ function buildQuotationPDF(qt){
 
 function buildInvoicePDF(garageName,garageContact,invGarage,items,note){
   var doc=newPdfDoc();
-  var y=pdfHeader(doc,"INVOICE",today(),new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase(),null,null);
-  // overwrite left header block with garage identity instead of Wasel Auto (this is the garage's own invoice to their customer)
-  doc.setFillColor("#ffffff");doc.rect(MARGIN,10,95,25,"F");
+  var y=15;
   doc.setFont("helvetica","bold");doc.setFontSize(17);doc.setTextColor(PDF_DARK);
-  doc.text(garageName||"Your Garage",MARGIN,20);
+  doc.text(garageName||"Your Garage",MARGIN,y+5);
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
-  if(garageContact)doc.text("Contact: "+garageContact,MARGIN,26);
+  if(garageContact)doc.text("Contact: "+garageContact,MARGIN,y+11);
 
-  y=pdfParties(doc,y,null,[],"BILL TO",invGarage.name||"Customer",[invGarage.phone||"",invGarage.vehicle?("Vehicle: "+invGarage.vehicle):"",invGarage.plate?("Plate: "+invGarage.plate):""].filter(Boolean));
+  doc.setFont("helvetica","bold");doc.setFontSize(15);doc.setTextColor(PDF_RED);
+  doc.text("INVOICE",PAGE_W-MARGIN,y+5,{align:"right"});
+  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
+  var dateStr=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase();
+  doc.text(dateStr,PAGE_W-MARGIN,y+11,{align:"right"});
+
+  y+=20;
+  doc.setDrawColor(PDF_RED);doc.setLineWidth(1);
+  doc.line(MARGIN,y,PAGE_W-MARGIN,y);
+  y+=9;
+
+  doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(PDF_MUT);
+  doc.text("BILL TO",MARGIN,y);
+  y+=6;
+  doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(PDF_DARK);
+  doc.text(invGarage.name||"Customer",MARGIN,y);
+  y+=5;
+  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
+  var billLines=[invGarage.phone||"",invGarage.vehicle?("Vehicle: "+invGarage.vehicle):"",invGarage.plate?("Plate: "+invGarage.plate):""].filter(Boolean);
+  billLines.forEach(function(l){doc.text(l,MARGIN,y);y+=4.2;});
+  y+=7;
 
   var cols=[
     {label:"DESCRIPTION",w:96,align:"left"},
@@ -431,10 +449,10 @@ function buildInvoicePDF(garageName,garageContact,invGarage,items,note){
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_DARK);
   var grandTotal=0;
   items.forEach(function(item){
-    var sell=item.cost*(1+(item.margin||0)/100);
-    var lineTotal=sell*item.qty;
+    var sell=(item.cost||0)*(1+(item.margin||0)/100);
+    var lineTotal=sell*(item.qty||1);
     grandTotal+=lineTotal;
-    var descLines=doc.splitTextToSize(item.desc,cols[0].w-3);
+    var descLines=doc.splitTextToSize(item.desc||"",cols[0].w-3);
     var rowH=Math.max(7,descLines.length*4+3);
     if(y+rowH>PAGE_H-30){
       doc.addPage();pageNum++;y=MARGIN;
@@ -443,7 +461,7 @@ function buildInvoicePDF(garageName,garageContact,invGarage,items,note){
     }
     var x=MARGIN+2;
     doc.text(descLines,x,y+4.5);x+=cols[0].w;
-    doc.text(String(item.qty),x+cols[1].w-2,y+4.5,{align:"right"});x+=cols[1].w;
+    doc.text(String(item.qty||1),x+cols[1].w-2,y+4.5,{align:"right"});x+=cols[1].w;
     doc.text(sell.toFixed(3),x+cols[2].w-2,y+4.5,{align:"right"});x+=cols[2].w;
     doc.text(lineTotal.toFixed(3),x+cols[3].w-2,y+4.5,{align:"right"});
     doc.setDrawColor(PDF_BDR);doc.setLineWidth(0.2);
