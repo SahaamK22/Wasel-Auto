@@ -408,35 +408,11 @@ function buildQuotationPDF(qt){
   return doc;
 }
 
-function buildInvoicePDF(garageName,garageContact,invGarage,items,note){
+function buildInvoicePDF(invRef,invGarage,items,note){
   var doc=newPdfDoc();
-  var y=15;
-  doc.setFont("helvetica","bold");doc.setFontSize(17);doc.setTextColor(PDF_DARK);
-  doc.text(garageName||"Your Garage",MARGIN,y+5);
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
-  if(garageContact)doc.text("Contact: "+garageContact,MARGIN,y+11);
-
-  doc.setFont("helvetica","bold");doc.setFontSize(15);doc.setTextColor(PDF_RED);
-  doc.text("INVOICE",PAGE_W-MARGIN,y+5,{align:"right"});
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
   var dateStr=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase();
-  doc.text(dateStr,PAGE_W-MARGIN,y+11,{align:"right"});
-
-  y+=20;
-  doc.setDrawColor(PDF_RED);doc.setLineWidth(1);
-  doc.line(MARGIN,y,PAGE_W-MARGIN,y);
-  y+=9;
-
-  doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(PDF_MUT);
-  doc.text("BILL TO",MARGIN,y);
-  y+=6;
-  doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(PDF_DARK);
-  doc.text(invGarage.name||"Customer",MARGIN,y);
-  y+=5;
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
-  var billLines=[invGarage.phone||"",invGarage.vehicle?("Vehicle: "+invGarage.vehicle):"",invGarage.plate?("Plate: "+invGarage.plate):""].filter(Boolean);
-  billLines.forEach(function(l){doc.text(l,MARGIN,y);y+=4.2;});
-  y+=7;
+  var y=pdfHeader(doc,"INVOICE",invRef||"—",dateStr,"PAID",PDF_GRN);
+  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",invGarage.name||"Customer",[invGarage.phone||"",invGarage.vehicle?("Vehicle: "+invGarage.vehicle):"",invGarage.plate?("Plate: "+invGarage.plate):""].filter(Boolean));
 
   var cols=[
     {label:"DESCRIPTION",w:96,align:"left"},
@@ -449,7 +425,7 @@ function buildInvoicePDF(garageName,garageContact,invGarage,items,note){
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_DARK);
   var grandTotal=0;
   items.forEach(function(item){
-    var sell=(item.cost||0)*(1+(item.margin||0)/100);
+    var sell=(item.cost||0)+(item.margin||0);
     var lineTotal=sell*(item.qty||1);
     grandTotal+=lineTotal;
     var descLines=doc.splitTextToSize(item.desc||"",cols[0].w-3);
@@ -542,6 +518,7 @@ function genRef(prefix){
 }
 function today(){ return new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase(); }
 function fmtBHD(n){ return Number(n).toFixed(3)+" BHD"; }
+function defMarkup(waselPrice){ return Number((waselPrice*0.20).toFixed(3)); }
 function getLog(k){ try{return JSON.parse(localStorage.getItem(k)||"[]");}catch(e){return[];} }
 function saveLog(k,d){ try{localStorage.setItem(k,JSON.stringify(d.slice(0,200)));}catch(e){} }
 
@@ -566,9 +543,9 @@ var S = {
   activeQuotation:null,
   // invoice tool (garage margin)
   invUnlocked:false, invRefInput:"", invPinInput:"", invRefError:"", invRef:"", invNum:"",
-  invMarginMode:"item", invOverallMargin:20,
+  invMarginMode:"item", invOverallMargin:5,
   invGarage:{name:"",phone:"",vehicle:"",plate:""},
-  invItems:[], invNote:"", invNewDesc:"", invNewCost:"", invNewMargin:"20", invNewQty:"1",
+  invItems:[], invNote:"", invNewDesc:"", invNewCost:"", invNewMargin:"", invNewQty:"1",
   invLogged:false, preloadParts:[],
   // supplier form
   supForm:{name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:"",bulky:false},
@@ -579,7 +556,7 @@ var S = {
   // checkout
   checkoutStep:0, // 0=cart, 1=details, 2=quotation generated
   checkoutGarage:{name:"",phone:"",vehicle:"",address:"",notes:""},
-  marginMode:"item",overallMargin:20,
+  marginMode:"item",overallMargin:5,
   activeQT:null,
 };
 
@@ -940,7 +917,7 @@ function renderPartModal(part){
   if(S.member){
     acts.appendChild(btn("btn-r btn-full","🛒 Add to Cart",function(){
       var ex=S.cart.find(function(i){return i.part.id===part.id;});
-      if(ex)ex.qty+=1;else S.cart.push({part:part,qty:1,margin:20});
+      if(ex)ex.qty+=1;else S.cart.push({part:part,qty:1,margin:defMarkup(part.waselPrice)});
       S.selPart=null;
       showToast("✓ "+part.name+" added to cart");
     }));
@@ -979,22 +956,23 @@ function renderCart(){
     }
     // Margin mode toggle
     var mmRow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.9rem",alignItems:"center",flexWrap:"wrap"}});
-    mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Margin:"]));
+    mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Markup:"]));
     mmRow.appendChild(btn(S.marginMode!=="overall"?"btn-r btn-sm":"btn-gh btn-sm","Per Item",function(){S.marginMode="item";render();}));
-    mmRow.appendChild(btn(S.marginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","One Overall %",function(){
+    mmRow.appendChild(btn(S.marginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","Same Amount for All",function(){
       S.marginMode="overall";
-      S.cart.forEach(function(i){i.margin=S.overallMargin!=null?S.overallMargin:20;});
+      S.cart.forEach(function(i){i.margin=S.overallMargin!=null?S.overallMargin:defMarkup(i.part.waselPrice);});
       render();
     }));
     if(S.marginMode==="overall"){
-      var omInp=el("input",{type:"number",value:S.overallMargin!=null?S.overallMargin:20,style:{width:"60px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
+      var omInp=el("input",{type:"number",step:"0.001",style:{width:"72px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
+      omInp.value=(S.overallMargin!=null?S.overallMargin:20).toFixed(3);
       omInp.addEventListener("input",function(){
         S.overallMargin=parseFloat(omInp.value)||0;
         S.cart.forEach(function(i){i.margin=S.overallMargin;});
         render();
       });
       mmRow.appendChild(omInp);
-      mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["% applied to every item"]));
+      mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["BHD added to every item"]));
     }
     wrap.appendChild(mmRow);
     // Cart items
@@ -1005,11 +983,12 @@ function renderCart(){
       info.appendChild(el("div",{className:"cart-item-meta"},[item.part.brand+" · "+item.part.cat]));
       info.appendChild(el("div",{className:"cart-item-price"},[item.part.waselPrice.toFixed(3)+" BHD per unit (Wasel price)"]));
       var mrow=div("",null,{style:{display:"flex",alignItems:"center",gap:"6px",marginTop:"4px"}});
-      mrow.appendChild(el("span",{style:{fontSize:"0.68rem",color:"var(--mut)"}},[S.ar?"هامشك %":"Your margin %"]));
-      var mInp=el("input",{type:"number",value:item.margin!=null?item.margin:20,disabled:S.marginMode==="overall",style:{width:"56px",padding:"3px 6px",fontSize:"0.75rem",border:"1px solid var(--bdr)",borderRadius:"5px",opacity:S.marginMode==="overall"?"0.5":"1"}});
+      mrow.appendChild(el("span",{style:{fontSize:"0.68rem",color:"var(--mut)"}},[S.ar?"هامشك (د.ب)":"Your markup (BHD)"]));
+      var mInp=el("input",{type:"number",step:"0.001",disabled:S.marginMode==="overall",style:{width:"68px",padding:"3px 6px",fontSize:"0.75rem",border:"1px solid var(--bdr)",borderRadius:"5px",opacity:S.marginMode==="overall"?"0.5":"1"}});
+      mInp.value=(item.margin!=null?item.margin:defMarkup(item.part.waselPrice)).toFixed(3);
       mInp.addEventListener("input",function(){item.margin=parseFloat(mInp.value)||0;render();});
       mrow.appendChild(mInp);
-      var sell=item.part.waselPrice*(1+(item.margin!=null?item.margin:20)/100);
+      var sell=item.part.waselPrice+(item.margin!=null?item.margin:defMarkup(item.part.waselPrice));
       mrow.appendChild(el("span",{style:{fontSize:"0.68rem",color:"var(--grn)",fontWeight:"600"}},["→ "+sell.toFixed(3)+" BHD to your customer"]));
       info.appendChild(mrow);
       ci.appendChild(info);
@@ -1021,14 +1000,14 @@ function renderCart(){
       del.style.marginLeft="8px";
       qc.appendChild(del);
       ci.appendChild(qc);
-      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD(item.part.waselPrice*(1+(item.margin!=null?item.margin:20)/100)*item.qty)]));
+      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD((item.part.waselPrice+(item.margin!=null?item.margin:defMarkup(item.part.waselPrice)))*item.qty)]));
       wrap.appendChild(ci);
     });
-    var yourProfit=S.cart.reduce(function(a,i){return a+(i.part.waselPrice*((i.margin!=null?i.margin:20)/100))*i.qty;},0);
-    wrap.appendChild(el("div",{className:"inv-profit-note",style:{marginBottom:"1rem"}},["💰 Set your margin per item above — your estimated profit on this order: "+fmtBHD(yourProfit)+". This is for your reference only — it never appears on the Wasel Auto quotation or on your customer's invoice."]));
+    var yourProfit=S.cart.reduce(function(a,i){return a+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice))*i.qty;},0);
+    wrap.appendChild(el("div",{className:"inv-profit-note",style:{marginBottom:"1rem"}},["💰 Total markup you're keeping on this order: "+fmtBHD(yourProfit)+". This is for your reference only — it never appears on the Wasel Auto quotation or on your customer's invoice."]));
     // Summary
     var sub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
-    var markedSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*(1+(i.margin!=null?i.margin:20)/100)*i.qty;},0);
+    var markedSub=S.cart.reduce(function(a,i){return a+(i.part.waselPrice+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice)))*i.qty;},0);
     var fee=sub*0.045;
     var isBulkyCart=S.cart.some(function(i){return !!i.part.bulky;});
     var deliveryFeeCart=isBulkyCart?6:2;
@@ -1117,7 +1096,7 @@ function buildQTWhatsApp(qt){
 
 function generateQuotation(){
   var rawSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
-  var markedSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*(1+(i.margin!=null?i.margin:20)/100)*i.qty;},0);
+  var markedSub=S.cart.reduce(function(a,i){return a+(i.part.waselPrice+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice)))*i.qty;},0);
   var fee=rawSub*0.045;
   var isBulky=S.cart.some(function(i){return !!i.part.bulky;});
   var deliveryFee=isBulky?6:2;
@@ -1126,14 +1105,14 @@ function generateQuotation(){
     ref:genRef("QT"),date:today(),status:"pending_payment",
     garage:Object.assign({},S.checkoutGarage),
     delivery:"Delivery after Benefit Pay confirmation",
-    items:S.cart.map(function(i){return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:i.part.waselPrice,total:i.part.waselPrice*i.qty,margin:i.margin!=null?i.margin:20,bulky:!!i.part.bulky};}),
+    items:S.cart.map(function(i){return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:i.part.waselPrice,total:i.part.waselPrice*i.qty,margin:i.margin!=null?i.margin:defMarkup(i.part.waselPrice),bulky:!!i.part.bulky};}),
     subtotal:markedSub,serviceFee:fee,deliveryFee:deliveryFee,total:total,
     member:S.member?S.member.garageName:"Unknown",
   };
   var log=getLog("wasel_quotations");log.unshift(qt);saveLog("wasel_quotations",log);
   S.quotations=log;S.activeQT=qt;S.checkoutStep=2;render();
 }
-function itemSellUnit(item){return item.unitPrice*(1+(item.margin!=null?item.margin:20)/100);}
+function itemSellUnit(item){return item.unitPrice+(item.margin!=null?item.margin:defMarkup(item.unitPrice));}
 function itemSellTotal(item){return itemSellUnit(item)*item.qty;}
 
 function renderQuotationDoc(qt){
@@ -1398,7 +1377,7 @@ function renderBulkResults(){
       S.bulkResults.forEach(function(r){
         if(r.match&&r.selected){
           var ex=S.cart.find(function(i){return i.part.id===r.match.id;});
-          if(ex)ex.qty+=r.qty;else S.cart.push({part:r.match,qty:r.qty,margin:20});
+          if(ex)ex.qty+=r.qty;else S.cart.push({part:r.match,qty:r.qty,margin:defMarkup(r.match.waselPrice)});
           added++;
         }
       });
@@ -1534,11 +1513,13 @@ function renderCustomerInvoicePreview(){
   var body=div("cust-inv-body");
   var hdr=div("cust-inv-header");
   var l=div("");
-  l.appendChild(el("div",{className:"cust-inv-garage-name"},[S.member?S.member.garageName:"Your Garage"]));
-  l.appendChild(el("div",{className:"cust-inv-garage-sub"},[S.invGarage.phone?("Contact: "+S.invGarage.phone):""]));
+  l.appendChild(el("div",{className:"cust-inv-garage-name"},[el("span",{},["Wasel"]),el("span",{style:{color:"var(--red)"}},[" Auto"])]));
+  l.appendChild(el("div",{className:"cust-inv-garage-sub"},["wasel-auto.vercel.app · +973 3384 4859"]));
+  l.appendChild(el("div",{className:"cust-inv-garage-sub"},["Manama, Kingdom of Bahrain"]));
   hdr.appendChild(l);
   var r=div("cust-inv-right");
   r.appendChild(el("div",{className:"cust-inv-title"},["INVOICE"]));
+  r.appendChild(el("div",{className:"cust-inv-ref"},[S.invNum||S.invRef||today()]));
   r.appendChild(el("div",{className:"cust-inv-ref"},[today()]));
   hdr.appendChild(r);
   body.appendChild(hdr);
@@ -1556,13 +1537,13 @@ function renderCustomerInvoicePreview(){
   thead.appendChild(thr);tbl.appendChild(thead);
   var tbody=el("tbody",{});
   S.invItems.forEach(function(item){
-    var sell=item.cost*(1+(item.margin||0)/100);
+    var sell=item.cost+(item.margin||0);
     var tr=el("tr",{});
     [item.desc,item.qty,sell.toFixed(3),(sell*item.qty).toFixed(3)].forEach(function(v){tr.appendChild(el("td",{},[String(v)]));});
     tbody.appendChild(tr);
   });
   tbl.appendChild(tbody);body.appendChild(tbl);
-  var total=S.invItems.reduce(function(a,i){return a+i.cost*(1+(i.margin||0)/100)*i.qty;},0);
+  var total=S.invItems.reduce(function(a,i){return a+(i.cost+(i.margin||0))*i.qty;},0);
   var totbox=el("div",{style:{display:"flex",justifyContent:"flex-end"}});
   var tb=div("pdf-totals-box");
   var gr=div("pdf-total-row grand");gr.appendChild(el("span",{},["TOTAL"]));gr.appendChild(el("span",{},[total.toFixed(3)+" BHD"]));tb.appendChild(gr);
@@ -1603,7 +1584,7 @@ function renderInvoices(){
       if(!found.invoicePin||found.invoicePin!==pin){S.invRefError="Incorrect Invoice PIN. Check the message Wasel Auto sent you.";render();return;}
       S.invRef=found.ref;S.invNum=found.invoiceNum||"";
       S.invGarage={name:found.garage.name||"",phone:found.garage.phone||"",vehicle:found.garage.vehicle||"",plate:""};
-      S.invItems=found.items.map(function(it){return{desc:it.name,cost:it.unitPrice,margin:it.margin!=null?it.margin:20,qty:it.qty};});
+      S.invItems=found.items.map(function(it){return{desc:it.name,cost:it.unitPrice,margin:it.margin!=null?it.margin:defMarkup(it.unitPrice),qty:it.qty};});
       S.invRefError="";S.invUnlocked=true;render();
     }
     row.appendChild(btn("btn-gold","Unlock",unlockInv));
@@ -1633,32 +1614,33 @@ function renderInvoices(){
   cb2.appendChild(g0);cp.appendChild(cb2);wrap.appendChild(cp);
 
   var ip=div("panel");
-  ip.appendChild(makePHead("📦","Items & Your Margin","Cost is what you paid Wasel Auto — margin is your profit, never shown to the customer"));
+  ip.appendChild(makePHead("📦","Items & Your Markup","Cost is what you paid Wasel Auto — markup is your profit, never shown to the customer"));
   var ib=div("pbody");
   var immRow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.9rem",alignItems:"center",flexWrap:"wrap"}});
-  immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Margin:"]));
+  immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Markup:"]));
   immRow.appendChild(btn(S.invMarginMode!=="overall"?"btn-r btn-sm":"btn-gh btn-sm","Per Item",function(){S.invMarginMode="item";render();}));
-  immRow.appendChild(btn(S.invMarginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","One Overall %",function(){
+  immRow.appendChild(btn(S.invMarginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","Same Amount for All",function(){
     S.invMarginMode="overall";
-    S.invItems.forEach(function(i){i.margin=S.invOverallMargin!=null?S.invOverallMargin:20;});
+    S.invItems.forEach(function(i){i.margin=S.invOverallMargin!=null?S.invOverallMargin:defMarkup(i.cost);});
     render();
   }));
   if(S.invMarginMode==="overall"){
-    var iomInp=el("input",{type:"number",value:S.invOverallMargin!=null?S.invOverallMargin:20,style:{width:"60px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
+    var iomInp=el("input",{type:"number",step:"0.001",style:{width:"72px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
+    iomInp.value=(S.invOverallMargin!=null?S.invOverallMargin:20).toFixed(3);
     iomInp.addEventListener("input",function(){
       S.invOverallMargin=parseFloat(iomInp.value)||0;
       S.invItems.forEach(function(i){i.margin=S.invOverallMargin;});
       render();
     });
     immRow.appendChild(iomInp);
-    immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["% applied to every item"]));
+    immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["BHD added to every item"]));
   }
   ib.appendChild(immRow);
   S.invItems.forEach(function(item,idx){
     var row=div("",null,{style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 0.7fr auto",gap:"8px",alignItems:"center",marginBottom:"8px",paddingBottom:"8px",borderBottom:"1px solid var(--bdr)"}});
     row.appendChild(inp("","Description",item.desc,function(v){item.desc=v;}));
     row.appendChild(inp("","Cost",item.cost,function(v){item.cost=parseFloat(v)||0;render();},{type:"number",step:"0.001"}));
-    var mgInp=inp("","Margin %",item.margin,function(v){item.margin=parseFloat(v)||0;render();},{type:"number"});
+    var mgInp=inp("","Markup (BHD)",(item.margin!=null?item.margin:defMarkup(item.cost)).toFixed(3),function(v){item.margin=parseFloat(v)||0;render();},{type:"number",step:"0.001"});
     if(S.invMarginMode==="overall"){mgInp.disabled=true;mgInp.style.opacity="0.5";}
     row.appendChild(mgInp);
     row.appendChild(inp("","Qty",item.qty,function(v){item.qty=parseInt(v)||1;render();},{type:"number"}));
@@ -1668,12 +1650,12 @@ function renderInvoices(){
   var addRow=div("",null,{style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 0.7fr auto",gap:"8px",alignItems:"center",marginTop:"6px"}});
   addRow.appendChild(inp("","New item description",S.invNewDesc,function(v){S.invNewDesc=v;}));
   addRow.appendChild(inp("","Cost",S.invNewCost,function(v){S.invNewCost=v;},{type:"number",step:"0.001"}));
-  addRow.appendChild(inp("","Margin %",S.invNewMargin,function(v){S.invNewMargin=v;},{type:"number"}));
+  addRow.appendChild(inp("","Markup (BHD)",S.invNewMargin,function(v){S.invNewMargin=v;},{type:"number",step:"0.001"}));
   addRow.appendChild(inp("","Qty",S.invNewQty,function(v){S.invNewQty=v;},{type:"number"}));
   addRow.appendChild(btn("btn-d btn-sm","＋",function(){
     if(!S.invNewDesc||!S.invNewCost){showToast("Enter description and cost");return;}
     S.invItems.push({desc:S.invNewDesc,cost:parseFloat(S.invNewCost)||0,margin:parseFloat(S.invNewMargin)||0,qty:parseInt(S.invNewQty)||1});
-    S.invNewDesc="";S.invNewCost="";S.invNewMargin="20";S.invNewQty="1";render();
+    S.invNewDesc="";S.invNewCost="";S.invNewMargin="";S.invNewQty="1";render();
   }));
   ib.appendChild(addRow);
   ip.appendChild(ib);wrap.appendChild(ip);
@@ -1685,15 +1667,15 @@ function renderInvoices(){
   np.appendChild(nb);wrap.appendChild(np);
 
   var totalCost=S.invItems.reduce(function(a,i){return a+i.cost*i.qty;},0);
-  var totalSell=S.invItems.reduce(function(a,i){return a+i.cost*(1+(i.margin||0)/100)*i.qty;},0);
+  var totalSell=S.invItems.reduce(function(a,i){return a+(i.cost+(i.margin||0))*i.qty;},0);
   wrap.appendChild(el("div",{className:"inv-profit-note"},["💰 Your cost: "+fmtBHD(totalCost)+"  →  Customer pays: "+fmtBHD(totalSell)+"  →  Your profit: "+fmtBHD(totalSell-totalCost)]));
   wrap.appendChild(btn("btn-r btn-lg btn-full","⬇️ Download Customer Invoice PDF",function(){
     if(S.invItems.length===0){showToast("Add at least one item");return;}
     if(!pdfReady()){showToast("PDF tool still loading — please try again in a second");return;}
     showToast("Preparing your PDF…");
     try{
-      var doc=buildInvoicePDF(S.member?S.member.garageName:"Your Garage",S.invGarage.phone,S.invGarage,S.invItems,S.invNote);
-      doc.save("Wasel-Auto-Invoice-"+(S.invRef||"customer")+".pdf");
+      var doc=buildInvoicePDF(S.invNum||S.invRef,S.invGarage,S.invItems,S.invNote);
+      doc.save("Wasel-Auto-Invoice-"+(S.invNum||S.invRef||"customer")+".pdf");
       showToast("✓ Downloaded");
     }catch(e){showToast("Couldn't build the PDF — try Print instead");}
   }));
