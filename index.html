@@ -551,7 +551,7 @@ var S = {
   supForm:{name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:"",bulky:false},
   pending:[],
   // admin
-  adminAuth:false, adminPw:"", adminGenRef:"", adminGenRefs:[],
+  adminAuth:false, adminPw:"", _adminKey:"", cloudLoi:null, cloudLoiStatus:"idle", adminGenRef:"", adminGenRefs:[],
   toast:null,
   // checkout
   checkoutStep:0, // 0=cart, 1=details, 2=quotation generated
@@ -1688,6 +1688,34 @@ function renderInvoices(){
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────
+// ── CENTRAL RECORD (Google Sheet) for supplier/garage sign-ups ────────
+// Paste the same Google Apps Script web-app URL here that you put in loi.html.
+var WASEL_CLOUD_URL="https://script.google.com/macros/s/AKfycbywLRf9nd0cLCMGoANsJpO6y_QRm_slbLAzxJ8ml6ZkvYkxCevsFuthb7W-pulJBtYW/exec";
+function getLoiContacted(){try{return JSON.parse(localStorage.getItem("wasel_loi_contacted")||"{}");}catch(e){return{};}}
+function fetchCloudLoi(){
+  if(!WASEL_CLOUD_URL){S.cloudLoiStatus="nourl";return;}
+  S.cloudLoiStatus="loading";
+  fetch(WASEL_CLOUD_URL+"?key="+encodeURIComponent(S._adminKey||"")).then(function(r){return r.json();}).then(function(j){
+    if(j&&j.ok){S.cloudLoi=j.rows||[];S.cloudLoiStatus="ok";}
+    else S.cloudLoiStatus=(j&&j.error==="unauthorized")?"unauth":"error";
+    render();
+  }).catch(function(){S.cloudLoiStatus="error";render();});
+}
+function mergedLoi(){
+  var contacted=getLoiContacted(),seen={},out=[];
+  (S.cloudLoi||[]).forEach(function(r){
+    seen[r.ref]=true;
+    out.push({ref:r.ref,typeLabel:r.typeLabel,company:r.company,cr:r.cr,contact:r.contact,role:r.role,phone:r.phone,email:r.email,location:r.location,date:r.date,details:r.details,contacted:!!contacted[r.ref]});
+  });
+  getLog("wasel_loi_registrations").forEach(function(r){
+    if(seen[r.ref])return;
+    var d=r.specific||{};
+    var details=Object.keys(d).filter(function(k){return d[k]&&(!Array.isArray(d[k])||d[k].length);}).map(function(k){return k+": "+(Array.isArray(d[k])?d[k].join(", "):d[k]);}).join(" · ");
+    out.push({ref:r.ref,typeLabel:r.typeLabel,company:r.company,cr:r.cr||"",contact:r.contact,role:r.role,phone:r.phone,email:r.email,location:r.location,date:r.date,details:details,contacted:!!(r.contacted||contacted[r.ref])});
+  });
+  return out;
+}
+
 function renderAdmin(){
   var wrap=div("admin-wrap");
   if(!S.adminAuth){
@@ -1699,7 +1727,7 @@ function renderAdmin(){
     pw.value=S.adminPw;
     pw.addEventListener("input",function(){S.adminPw=pw.value;});
     function tryAdmin(){
-      if(S.adminPw==="11Wasel@uto22"){S.adminAuth=true;S.adminPw="";render();}
+      if(S.adminPw==="11Wasel@uto22"){S.adminAuth=true;S._adminKey=S.adminPw;S.adminPw="";S.cloudLoiStatus="idle";render();}
       else{showToast("Incorrect password");}
     }
     pw.addEventListener("keydown",function(e){if(e.key==="Enter")tryAdmin();});
@@ -1710,7 +1738,7 @@ function renderAdmin(){
   }
   wrap.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}},[
     el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.2rem"}},["Admin Dashboard"]),
-    btn("btn-gh btn-sm","Logout",function(){S.adminAuth=false;render();}),
+    btn("btn-gh btn-sm","Logout",function(){S.adminAuth=false;S._adminKey="";S.cloudLoi=null;S.cloudLoiStatus="idle";render();}),
   ]));
   var qLog=getLog("wasel_quotations");
   var pending=getLog("wasel_pending_parts");
@@ -1841,31 +1869,38 @@ function renderAdmin(){
   });
   rp.appendChild(rb);wrap.appendChild(rp);
 
-  var loiLog=getLog("wasel_loi_registrations");
+  if(S.cloudLoiStatus==="idle")fetchCloudLoi();
+  var loiAll=mergedLoi();
+  var newCount=loiAll.filter(function(r){return!r.contacted;}).length;
+  var statusTxt=S.cloudLoiStatus==="ok"?"✓ synced with central record":S.cloudLoiStatus==="loading"?"loading central record…":S.cloudLoiStatus==="nourl"?"⚠️ central record not set up — only registrations made on this device show here":S.cloudLoiStatus==="unauth"?"⚠️ central record rejected the admin password — check the key in your Google script":"⚠️ couldn't reach the central record — showing this device only";
   var lp=div("panel");
-  lp.appendChild(makePHead("🤝","LOI Registrations",loiLog.length+" supplier/garage sign-ups from wasel-auto.vercel.app/loi"));
-  var lb=div("pbody",null,{style:{padding:"0"}});
-  if(loiLog.length===0)lb.appendChild(el("div",{style:{padding:"1rem",color:"var(--mut)",fontSize:"0.85rem"}},["No registrations yet"]));
-  loiLog.forEach(function(r,idx){
+  lp.appendChild(makePHead("🤝","LOI Registrations (Suppliers & Garages)",loiAll.length+" total · "+newCount+" new · "+statusTxt));
+  var lb=div("pbody",null,{style:{padding:"0.8rem"}});
+  var lrow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.8rem"}});
+  lrow.appendChild(btn("btn-gh btn-sm","🔄 Refresh",function(){S.cloudLoiStatus="idle";render();}));
+  lb.appendChild(lrow);
+  if(loiAll.length===0)lb.appendChild(el("div",{style:{color:"var(--mut)",fontSize:"0.85rem"}},["No registrations yet"]));
+  loiAll.forEach(function(r){
+    var isSup=/supplier/i.test(r.typeLabel||"");
     var card=div("pending-card",null,{style:{borderColor:r.contacted?"var(--grn)":"#f59e0b"}});
     var top=div("",null,{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
     var left=div("");
-    left.appendChild(el("span",{className:"pdf-status-badge "+(r.type==="supplier"?"badge-quot":"badge-paid")},[r.typeLabel]));
-    left.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.9rem",marginTop:"4px"}},[r.company]));
-    left.appendChild(el("div",{style:{fontSize:"0.78rem",color:"var(--mut)"}},[r.contact+(r.role?" — "+r.role:"")+" · "+r.phone]));
+    left.appendChild(el("span",{className:"pdf-status-badge "+(isSup?"badge-quot":"badge-paid")},[r.typeLabel||""]));
+    left.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.9rem",marginTop:"4px"}},[r.company||""]));
+    if(r.cr)left.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--dark)",fontWeight:"600"}},["CR: "+r.cr]));
+    left.appendChild(el("div",{style:{fontSize:"0.78rem",color:"var(--mut)"}},[(r.contact||"")+(r.role?" — "+r.role:"")+" · "+(r.phone||"")]));
     if(r.email)left.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--mut)"}},[r.email]));
-    left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"2px"}},[r.location+" · "+r.date+" · "+r.ref]));
-    var specKeys=Object.keys(r.specific||{});
-    var specText=specKeys.map(function(k){return r.specific[k]?k+": "+r.specific[k]:null;}).filter(Boolean).join(" · ");
-    if(specText)left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"4px",fontStyle:"italic"}},[specText]));
+    left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"2px"}},[(r.location||"")+" · "+(r.date||"")+" · "+r.ref]));
+    if(r.details)left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"4px",fontStyle:"italic"}},[r.details]));
     top.appendChild(left);
     top.appendChild(el("span",{style:{fontSize:"0.68rem",fontWeight:"700",color:r.contacted?"var(--grn)":"#f59e0b",whiteSpace:"nowrap"}},[r.contacted?"✓ Contacted":"⏳ New"]));
     card.appendChild(top);
     var acts=div("",null,{style:{display:"flex",gap:"6px",marginTop:"8px"}});
-    acts.appendChild(el("a",{href:"https://wa.me/"+r.phone.replace(/[^0-9]/g,"")+"?text="+encodeURIComponent("Hi "+r.contact+", thank you for registering with Wasel Auto (ref "+r.ref+"). Let's get you set up — "),target:"_blank",rel:"noopener",className:"btn btn-wa btn-sm"},["💬 WhatsApp"]));
+    acts.appendChild(el("a",{href:"https://wa.me/"+String(r.phone||"").replace(/[^0-9]/g,"")+"?text="+encodeURIComponent("Hi "+(r.contact||"")+", thank you for registering with Wasel Auto (ref "+r.ref+"). Let's get you set up — "),target:"_blank",rel:"noopener",className:"btn btn-wa btn-sm"},["💬 WhatsApp"]));
     if(!r.contacted){
       acts.appendChild(btn("btn-grn btn-sm","✓ Mark Contacted",function(){
-        loiLog[idx].contacted=true;saveLog("wasel_loi_registrations",loiLog);render();
+        var m=getLoiContacted();m[r.ref]=true;try{localStorage.setItem("wasel_loi_contacted",JSON.stringify(m));}catch(e){}
+        render();
       }));
     }
     card.appendChild(acts);
