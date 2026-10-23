@@ -200,6 +200,10 @@ body{background:var(--bg);color:var(--txt);font-family:'Barlow',sans-serif;min-h
             <input class="ifield" id="company" placeholder="e.g. Nasser Auto Parts"/>
           </div>
           <div class="ig">
+            <label class="il">Company CR Number *</label>
+            <input class="ifield" id="crNumber" placeholder="e.g. 123456-1" inputmode="text"/>
+          </div>
+          <div class="ig">
             <label class="il">Your Full Name *</label>
             <input class="ifield" id="contact" placeholder="Full name"/>
           </div>
@@ -422,6 +426,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Barlow',sans-serif;min-h
 
             <div class="detail-block">
               <div><strong>Company / Name:</strong> <span id="loiCompany"></span></div>
+              <div><strong>CR Number:</strong> <span id="loiCR"></span></div>
               <div><strong>Representative:</strong> <span id="loiContact"></span><span id="loiRoleSpan"></span></div>
               <div><strong>WhatsApp:</strong> <span id="loiPhone"></span><span id="loiEmailSpan"></span></div>
               <div><strong>Location:</strong> <span id="loiLocation"></span></div>
@@ -471,6 +476,34 @@ body{background:var(--bg);color:var(--txt);font-family:'Barlow',sans-serif;min-h
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 let currentType='supplier';
+
+// ── CENTRAL RECORD (Google Sheet) ─────────────────────────────────────
+// Paste your Google Apps Script web-app URL between the quotes. Leave empty to keep
+// registrations on this device only. Same URL must be set in index.html.
+var WASEL_CLOUD_URL="https://script.google.com/macros/s/AKfycbywLRf9nd0cLCMGoANsJpO6y_QRm_slbLAzxJ8ml6ZkvYkxCevsFuthb7W-pulJBtYW/exec";
+
+function getUnsynced(){try{return JSON.parse(localStorage.getItem('wasel_loi_unsynced')||'[]');}catch(e){return[];}}
+function setUnsynced(a){try{localStorage.setItem('wasel_loi_unsynced',JSON.stringify(a));}catch(e){}}
+function cloudSend(entry){
+  if(!WASEL_CLOUD_URL)return Promise.resolve(false);
+  return fetch(WASEL_CLOUD_URL,{method:'POST',mode:'no-cors',keepalive:true,headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({type:'loi',entry:entry})}).then(function(){return true;}).catch(function(){return false;});
+}
+function queueAndSend(entry){
+  if(!WASEL_CLOUD_URL)return;
+  const q=getUnsynced();q.push(entry);setUnsynced(q);
+  cloudSend(entry).then(function(ok){
+    if(ok)setUnsynced(getUnsynced().filter(function(e){return e.ref!==entry.ref;}));
+  });
+}
+function flushUnsynced(){
+  if(!WASEL_CLOUD_URL)return;
+  getUnsynced().forEach(function(entry){
+    cloudSend(entry).then(function(ok){
+      if(ok)setUnsynced(getUnsynced().filter(function(e){return e.ref!==entry.ref;}));
+    });
+  });
+}
+flushUnsynced();
 
 function getLoiLog(){try{return JSON.parse(localStorage.getItem('wasel_loi_registrations')||'[]');}catch(e){return[];}}
 function saveLoiLog(d){try{localStorage.setItem('wasel_loi_registrations',JSON.stringify(d.slice(0,300)));}catch(e){}}
@@ -528,8 +561,9 @@ function generateLOI(){
   const company=document.getElementById('company').value.trim();
   const contact=document.getElementById('contact').value.trim();
   const phone=document.getElementById('phone').value.trim();
+  const cr=document.getElementById('crNumber').value.trim();
   const agree=document.getElementById('agree').checked;
-  if(!company||!contact||!phone){alert('Please fill in Company Name, Your Name and WhatsApp Number.');return;}
+  if(!company||!cr||!contact||!phone){alert('Please fill in Company Name, Company CR Number, Your Name and WhatsApp Number.');return;}
   if(!agree){alert('Please confirm the terms by ticking the checkbox.');return;}
 
   const role=document.getElementById('role').value.trim();
@@ -559,9 +593,11 @@ function generateLOI(){
     specificData={mechanics:m,vehicles:v,spend:sp,challenge:c};
   }
 
+  const entry={ref:ref,date:dateStr,timestamp:now.toISOString(),type:currentType,typeLabel:typeLabel,company:company,cr:cr,contact:contact,role:role,phone:phone,email:email,location:location,specific:specificData,contacted:false};
   const log=getLoiLog();
-  log.unshift({ref:ref,date:dateStr,timestamp:now.toISOString(),type:currentType,typeLabel:typeLabel,company:company,contact:contact,role:role,phone:phone,email:email,location:location,specific:specificData,contacted:false});
+  log.unshift(entry);
   saveLoiLog(log);
+  queueAndSend(entry);   // also sends a copy to Wasel Auto's central record, even if they never tap WhatsApp
 
   document.getElementById('successName').textContent=contact;
   document.getElementById('successPhone').textContent=phone;
@@ -574,6 +610,7 @@ function generateLOI(){
   document.getElementById('loiTypeTitle').textContent=typeLabel;
   document.getElementById('loiTypeInline').textContent=typeLabel;
   document.getElementById('loiCompany').textContent=company;
+  document.getElementById('loiCR').textContent=cr;
   document.getElementById('loiContact').textContent=contact;
   document.getElementById('loiRoleSpan').innerHTML=role?' — <strong>'+role+'</strong>':'';
   document.getElementById('loiPhone').textContent=phone;
@@ -589,7 +626,9 @@ function generateLOI(){
     'Hello Wasel Auto,\n\nI have just registered my interest on your platform.\n\n'+
     '📋 Reference: '+ref+'\n'+
     '🏢 Company: '+company+'\n'+
+    '🧾 CR Number: '+cr+'\n'+
     '👤 Name: '+contact+(role?' — '+role:'')+'\n'+
+    '📞 Phone: '+phone+'\n'+
     '🤝 Type: '+typeLabel+'\n'+
     '📍 Location: '+location+'\n\n'+
     'Please contact me to discuss next steps.\n\nThank you.'
@@ -608,7 +647,7 @@ function resetForm(){
   document.getElementById('howSection').style.display='';
   document.getElementById('tabRow').style.display='flex';
   document.getElementById('successWrap').style.display='none';
-  ['company','contact','role','phone','email','location','speciality'].forEach(id=>{
+  ['company','crNumber','contact','role','phone','email','location','speciality'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.value='';
   });
