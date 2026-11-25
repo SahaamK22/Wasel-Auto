@@ -228,6 +228,13 @@ body{background:var(--bg);color:var(--txt);font-family:'Barlow',sans-serif;min-h
 .lock-banner-text{color:white;font-size:0.85rem;font-weight:600;}
 .lock-banner-sub{color:#888;font-size:0.75rem;margin-top:2px;}
 /* PRINT */
+.vehcard{background:#f0fdf4;border:1.5px solid #bbf7d0;color:#14532d;border-radius:9px;padding:0.65rem 0.85rem;margin-top:0.55rem;font-size:0.84rem;line-height:1.5;}
+.vehcard.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+.vehcard .vt{font-family:'Barlow';font-weight:900;font-size:1rem;}
+.vehcard .vs{font-size:0.7rem;opacity:0.8;font-family:'JetBrains Mono';word-break:break-all;}
+.vehcard select{margin-top:6px;margin-right:6px;padding:5px 8px;border-radius:6px;border:1.5px solid #d4d4d4;font-size:0.8rem;background:white;}
+.stk-in{color:var(--grn);font-weight:700;}.stk-low{color:var(--gold);font-weight:700;}.stk-out{color:var(--red);font-weight:700;}
+.gate-note{font-size:0.7rem;color:var(--mut);margin-top:4px;}
 @media print{
   .nav,.apptabs,.doc-actions,.inv-wrap .btn,.admin-wrap,.lock-banner,.inv-profit-note,.inv-wrap>.panel{display:none!important;}
   .pdf-doc,.cust-inv{border:none;box-shadow:none;}
@@ -269,6 +276,7 @@ function pdfHeader(doc,docType,ref,dateStr,statusText,statusColor){
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_MUT);
   doc.text("wasel-auto.vercel.app  ·  +973 3384 4859",MARGIN,28);
   doc.text("waselauto26@gmail.com  ·  Manama, Bahrain",MARGIN,32.5);
+  if(WASEL_VAT_NO)doc.text("VAT No: "+WASEL_VAT_NO,MARGIN,37);
 
   doc.setFont("helvetica","bold");doc.setFontSize(15);doc.setTextColor(PDF_RED);
   doc.text(docType,PAGE_W-MARGIN,20,{align:"right"});
@@ -332,7 +340,7 @@ function buildQuotationPDF(qt){
     doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(PDF_GRN);
     doc.text("Invoice: "+qt.invoiceNum,PAGE_W-MARGIN,y-3,{align:"right"});
   }
-  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",qt.garage.name||"Customer",[qt.garage.phone||"",qt.garage.address?("Deliver to: "+qt.garage.address):""].filter(Boolean));
+  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",qt.garage.name||"Customer",[qt.garage.phone||"",qt.garage.vehicle?("Vehicle: "+qt.garage.vehicle):"",qt.garage.plate?("Plate: "+qt.garage.plate):"",qt.garage.address?("Deliver to: "+qt.garage.address):""].filter(Boolean));
 
   var cols=[
     {label:"DESCRIPTION",w:52,align:"left"},
@@ -367,22 +375,24 @@ function buildQuotationPDF(qt){
     y+=rowH;
   });
   y+=4;
-  if(y>PAGE_H-60){doc.addPage();pageNum++;y=MARGIN;}
+  if(y>PAGE_H-75){doc.addPage();pageNum++;y=MARGIN;}
   var totalsX=PAGE_W-MARGIN-55;
+  var pdfRows=[["Subtotal",qt.subtotal],["Delivery",qt.deliveryFee||0],["Service Fee",qt.serviceFee]];
+  if(qt.vat!=null)pdfRows.push(["VAT (10%)",qt.vat]);
   doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(PDF_MUT);
-  doc.text("Subtotal",totalsX,y+5);
-  doc.text(qt.subtotal.toFixed(3)+" BHD",PAGE_W-MARGIN,y+5,{align:"right"});
-  doc.text("Delivery",totalsX,y+10.5);
-  doc.text((qt.deliveryFee||0).toFixed(3)+" BHD",PAGE_W-MARGIN,y+10.5,{align:"right"});
-  doc.text("Service Fee",totalsX,y+16);
-  doc.text(qt.serviceFee.toFixed(3)+" BHD",PAGE_W-MARGIN,y+16,{align:"right"});
+  var ty=y+5;
+  pdfRows.forEach(function(r){
+    doc.text(r[0],totalsX,ty);
+    doc.text(r[1].toFixed(3)+" BHD",PAGE_W-MARGIN,ty,{align:"right"});
+    ty+=5.5;
+  });
   doc.setDrawColor(PDF_DARK);doc.setLineWidth(0.3);
-  doc.line(totalsX,y+19,PAGE_W-MARGIN,y+19);
+  doc.line(totalsX,ty-1.5,PAGE_W-MARGIN,ty-1.5);
   doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(PDF_DARK);
-  doc.text("TOTAL DUE",totalsX,y+25.5);
-  doc.setTextColor(PDF_RED);
-  doc.text(qt.total.toFixed(3)+" BHD",PAGE_W-MARGIN,y+25.5,{align:"right"});
-  y+=33;
+  doc.text(isInvoice?"TOTAL PAID":"TOTAL DUE",totalsX,ty+5);
+  doc.setTextColor(isInvoice?PDF_GRN:PDF_RED);
+  doc.text(qt.total.toFixed(3)+" BHD",PAGE_W-MARGIN,ty+5,{align:"right"});
+  y=ty+13;
 
   if(!isInvoice){
     if(y>PAGE_H-70){doc.addPage();pageNum++;y=MARGIN;}
@@ -407,72 +417,6 @@ function buildQuotationPDF(qt){
   for(var i=1;i<=totalPages;i++){doc.setPage(i);pdfFooter(doc,i,totalPages);}
   return doc;
 }
-
-function buildInvoicePDF(invRef,invGarage,items,note){
-  var doc=newPdfDoc();
-  var dateStr=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase();
-  var y=pdfHeader(doc,"INVOICE",invRef||"—",dateStr,"PAID",PDF_GRN);
-  y=pdfParties(doc,y,"Wasel Auto",["Manama, Kingdom of Bahrain","+973 3384 4859"],"BILL TO",invGarage.name||"Customer",[invGarage.phone||"",invGarage.vehicle?("Vehicle: "+invGarage.vehicle):"",invGarage.plate?("Plate: "+invGarage.plate):""].filter(Boolean));
-
-  var cols=[
-    {label:"DESCRIPTION",w:96,align:"left"},
-    {label:"QTY",w:22,align:"center"},
-    {label:"UNIT PRICE BHD",w:31,align:"right"},
-    {label:"TOTAL BHD",w:31,align:"right"},
-  ];
-  var pageNum=1;
-  y=pdfTableHeader(doc,y,cols);
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_DARK);
-  var grandTotal=0;
-  items.forEach(function(item){
-    var sell=(item.cost||0)+(item.margin||0);
-    var lineTotal=sell*(item.qty||1);
-    grandTotal+=lineTotal;
-    var descLines=doc.splitTextToSize(item.desc||"",cols[0].w-3);
-    var rowH=Math.max(7,descLines.length*4+3);
-    if(y+rowH>PAGE_H-30){
-      doc.addPage();pageNum++;y=MARGIN;
-      y=pdfTableHeader(doc,y,cols);
-      doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(PDF_DARK);
-    }
-    var x=MARGIN+2;
-    doc.text(descLines,x,y+4.5);x+=cols[0].w;
-    doc.text(String(item.qty||1),x+cols[1].w-2,y+4.5,{align:"right"});x+=cols[1].w;
-    doc.text(sell.toFixed(3),x+cols[2].w-2,y+4.5,{align:"right"});x+=cols[2].w;
-    doc.text(lineTotal.toFixed(3),x+cols[3].w-2,y+4.5,{align:"right"});
-    doc.setDrawColor(PDF_BDR);doc.setLineWidth(0.2);
-    doc.line(MARGIN,y+rowH,PAGE_W-MARGIN,y+rowH);
-    y+=rowH;
-  });
-  y+=6;
-  if(y>PAGE_H-45){doc.addPage();pageNum++;y=MARGIN;}
-  var totalsX=PAGE_W-MARGIN-55;
-  doc.setDrawColor(PDF_DARK);doc.setLineWidth(0.3);
-  doc.line(totalsX,y,PAGE_W-MARGIN,y);
-  doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(PDF_DARK);
-  doc.text("TOTAL",totalsX,y+7);
-  doc.text(grandTotal.toFixed(3)+" BHD",PAGE_W-MARGIN,y+7,{align:"right"});
-  y+=16;
-  if(note){
-    doc.setFont("helvetica","normal");doc.setFontSize(7.8);doc.setTextColor(PDF_MUT);
-    var noteLines=doc.splitTextToSize(note,CONTENT_W-6);
-    if(y+noteLines.length*4.2+8>PAGE_H-25){doc.addPage();pageNum++;y=MARGIN;}
-    doc.setFillColor("#f0f0f0");
-    doc.rect(MARGIN,y,CONTENT_W,noteLines.length*4.2+6,"F");
-    doc.text(noteLines,MARGIN+4,y+6);
-    y+=noteLines.length*4.2+10;
-  }
-  doc.setFont("helvetica","normal");doc.setFontSize(7.5);doc.setTextColor(PDF_MUT);
-  doc.text("Thank you for your business.",MARGIN,y+2);
-
-  var totalPages=doc.internal.getNumberOfPages();
-  for(var i=1;i<=totalPages;i++){doc.setPage(i);pdfFooter(doc,i,totalPages);}
-  return doc;
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// WASEL AUTO — COMPLETE PLATFORM
-// ══════════════════════════════════════════════════════════════════════
 
 // ── MEMBER PINS (you send these to garages via WhatsApp) ─────────────
 // Format: { pin: "XXXX", garageName: "...", phone: "..." }
@@ -502,11 +446,16 @@ var PARTS = [
   {id:14,name:"Front Bumper — Toyota Camry 2019",nameAr:"بمبر أمامي تويوتا كامري 2019",cat:"Body Parts",make:"Toyota",model:"Camry",yf:2019,yt:2021,waselPrice:85.000,retailPrice:105.000,type:"Genuine",brand:"Toyota",qty:2,warranty:"3 months",bulky:true},
   {id:15,name:"Right Front Door — Nissan Patrol",nameAr:"باب أمامي يمين نيسان باترول",cat:"Body Parts",make:"Nissan",model:"Patrol",yf:2016,yt:2020,waselPrice:220.000,retailPrice:270.000,type:"Genuine",brand:"Nissan",qty:1,warranty:"3 months",bulky:true},
   {id:16,name:"Mobil 1 5W-30 Full Synthetic 4L",nameAr:"زيت موبيل 1 تخليقي كامل 4 لتر",cat:"Oils & Fluids",make:"Universal",model:"All",yf:2000,yt:2025,waselPrice:9.200,retailPrice:11.500,type:"Aftermarket",brand:"Mobil",qty:24,warranty:"N/A",bulky:false},
+  // SAMPLE entries for Infiniti QX80 / QX56 (Z62) — replace with real supplier stock and prices
+  {id:17,name:"Infiniti Genuine Oil Filter — QX80 / QX56",nameAr:"فلتر زيت إنفينيتي أصلي QX80 / QX56",cat:"Filters",make:"Infiniti",model:"QX80",yf:2011,yt:2024,waselPrice:6.500,retailPrice:7.500,type:"Genuine",brand:"Infiniti",qty:12,warranty:"12 months",bulky:false},
+  {id:18,name:"Infiniti Front Brake Pads — QX80 / QX56",nameAr:"تيل فرامل أمامي إنفينيتي QX80 / QX56",cat:"Brakes",make:"Infiniti",model:"QX80",yf:2011,yt:2024,waselPrice:52.000,retailPrice:62.000,type:"Genuine",brand:"Infiniti",qty:6,warranty:"12 months",bulky:false},
+  {id:19,name:"NGK Iridium Spark Plugs Set 8x — QX80 / QX56",nameAr:"شمعات NGK إريديوم طقم 8 حبات QX80 / QX56",cat:"Engine",make:"Infiniti",model:"QX80",yf:2011,yt:2024,waselPrice:38.000,retailPrice:46.000,type:"Aftermarket",brand:"NGK",qty:9,warranty:"6 months",bulky:false},
+  {id:20,name:"Mann Air Filter — QX80 / QX56",nameAr:"فلتر هواء مان QX80 / QX56",cat:"Filters",make:"Infiniti",model:"QX80",yf:2011,yt:2024,waselPrice:14.500,retailPrice:18.000,type:"Aftermarket",brand:"Mann",qty:3,warranty:"6 months",bulky:false},
 ];
 
 var CATS = ["All","Engine","Brakes","Filters","Oils & Fluids","Suspension","Body Parts","Cooling","Electronics"];
 var PTYPES = ["All Types","Genuine","Aftermarket"];
-var MAKES = ["All Makes","Toyota","Nissan","BMW","Mercedes","Honda","Ford"];
+var MAKES = ["All Makes","Toyota","Nissan","Infiniti","BMW","Mercedes","Honda","Ford"];
 
 // ── HELPERS ───────────────────────────────────────────────────────────
 function genRef(prefix){
@@ -518,7 +467,30 @@ function genRef(prefix){
 }
 function today(){ return new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase(); }
 function fmtBHD(n){ return Number(n).toFixed(3)+" BHD"; }
-function defMarkup(waselPrice){ return Number((waselPrice*0.20).toFixed(3)); }
+// ── PRICING RULES (set by Wasel Auto only — garages cannot change these) ──
+var GARAGE_DISCOUNT_PCT=5;   // partner-garage discount off the listed (B2C) price. A part can override with partnerDisc:<number>
+var SERVICE_FEE_RATE=0.045;  // Wasel Auto service fee, charged on the parts subtotal
+var VAT_RATE=0.10;           // Bahrain VAT, added to every quotation / invoice
+var WASEL_VAT_NO="";         // put Wasel Auto's VAT registration number here — it then prints on every quotation / invoice
+function r3(x){ return Math.round((x+Number.EPSILON)*1000)/1000; }
+function partnerPct(p){ return p.partnerDisc!=null?p.partnerDisc:GARAGE_DISCOUNT_PCT; }
+function partnerPrice(p){ return r3(p.waselPrice*(1-partnerPct(p)/100)); }
+function stockInfo(p){
+  var q=p.qty||0;
+  if(q<=0)return{cls:"stk-out",txt:"Out of stock"};
+  if(q<=5)return{cls:"stk-low",txt:"Low stock — only "+q+" left"};
+  return{cls:"stk-in",txt:"In stock"};
+}
+function canSeePrice(){ return !!(S.member||S.lead); }
+function calcOrder(cart){
+  var subtotal=r3(cart.reduce(function(a,i){return a+partnerPrice(i.part)*i.qty;},0));
+  var fee=r3(subtotal*SERVICE_FEE_RATE);
+  var bulky=cart.some(function(i){return !!i.part.bulky;});
+  var delivery=bulky?6:2;
+  var taxable=r3(subtotal+fee+delivery);
+  var vat=r3(taxable*VAT_RATE);
+  return{subtotal:subtotal,fee:fee,delivery:delivery,bulky:bulky,taxable:taxable,vat:vat,total:r3(taxable+vat)};
+}
 function getLog(k){ try{return JSON.parse(localStorage.getItem(k)||"[]");}catch(e){return[];} }
 function saveLog(k,d){ try{localStorage.setItem(k,JSON.stringify(d.slice(0,200)));}catch(e){} }
 
@@ -543,25 +515,28 @@ var S = {
   activeQuotation:null,
   // invoice tool (garage margin)
   invUnlocked:false, invRefInput:"", invPinInput:"", invRefError:"", invRef:"", invNum:"",
-  invMarginMode:"item", invOverallMargin:5,
   invGarage:{name:"",phone:"",vehicle:"",plate:""},
-  invItems:[], invNote:"", invNewDesc:"", invNewCost:"", invNewMargin:"", invNewQty:"1",
+  invNote:"",
   invLogged:false, preloadParts:[],
   // supplier form
   supForm:{name:"",nameAr:"",brand:"",make:"",model:"",yf:"",yt:"",price:"",type:"Genuine",cat:"Engine",qty:"",warranty:"12 months",phone:"",bulky:false},
   pending:[],
   // admin
-  adminAuth:false, adminPw:"", adminGenRef:"", adminGenRefs:[],
+  adminAuth:false, adminPw:"", _adminKey:"", cloudLoi:null, cloudLoiStatus:"idle", adminGenRef:"", adminGenRefs:[],
   toast:null,
+  // B2C price gate + vehicle (VIN) details
+  lead:null, showLeadModal:false, leadError:"",
+  veh:null, _vehBox:null, _vehP:null,
+  cloudLeads:null, cloudLeadsStatus:"idle",
   // checkout
   checkoutStep:0, // 0=cart, 1=details, 2=quotation generated
   checkoutGarage:{name:"",phone:"",vehicle:"",address:"",notes:""},
-  marginMode:"item",overallMargin:5,
   activeQT:null,
 };
 
 S.pending=getLog("wasel_pending_parts");
 S.quotations=getLog("wasel_quotations");
+try{S.lead=JSON.parse(localStorage.getItem("wasel_b2c_lead")||"null");}catch(e){S.lead=null;}
 
 function showToast(m){S.toast=m;render();setTimeout(function(){S.toast=null;render();},3000);}
 
@@ -625,7 +600,7 @@ function render(){
     nr.appendChild(el("span",{style:{color:"#4ade80",fontSize:"0.72rem",fontFamily:"'JetBrains Mono'",fontWeight:"700"}},["✓ "+S.member.garageName.split(" ")[0]]));
     nr.appendChild(el("button",{className:"btn btn-gh btn-sm",onClick:function(){S.member=null;S.cart=[];render();}},["Logout"]));
   } else {
-    nr.appendChild(el("button",{className:"btn btn-gold btn-sm",onClick:function(){S.showLoginModal=true;render();}},["🔐 Member Login"]));
+    nr.appendChild(el("button",{className:"btn btn-gold btn-sm",onClick:function(){S.showLoginModal=true;render();}},["🔐 Garage Login"]));
   }
   nr.appendChild(el("a",{href:"/loi.html",className:"btn btn-r btn-sm"},["Register Interest"]));
   nav.appendChild(nr);
@@ -652,7 +627,9 @@ function render(){
   // MODALS
   if(S.showLoginModal)app.appendChild(renderLoginModal());
   if(S.selPart)app.appendChild(renderPartModal(S.selPart));
+  if(S.showLeadModal)app.appendChild(renderLeadModal());
   if(S.toast){var t=div("toast",[S.toast]);app.appendChild(t);}
+  paintVeh();
 }
 
 // ── LOGIN MODAL ───────────────────────────────────────────────────────
@@ -662,7 +639,7 @@ function renderLoginModal(){
   var box=div("member-gate");
   box.addEventListener("click",function(e){e.stopPropagation();});
   box.appendChild(el("div",{style:{fontSize:"2.5rem",marginBottom:"0.8rem"}},["🔐"]));
-  box.appendChild(el("h2",{},[S.ar?"تسجيل دخول الأعضاء":"Member Garage Login"]));
+  box.appendChild(el("h2",{},[S.ar?"دخول الورش الشريكة":"Garage Login (Partner Garages)"]));
   box.appendChild(el("p",{},[S.ar?"أدخل رمز PIN الخاص بك المرسل من وصل أوتو عبر واتساب":"Enter your 4-digit PIN sent by Wasel Auto via WhatsApp"]));
   // Garage name
   var garNameInp=inp("",S.ar?"اسم الورشة":"Your Garage Name","",function(v){S._loginGarage=v;});
@@ -686,7 +663,7 @@ function renderLoginModal(){
   }
   box.appendChild(pinRow);
   if(S.pinError)box.appendChild(el("div",{style:{color:"#ff9090",fontSize:"0.78rem",fontFamily:"'JetBrains Mono'",marginBottom:"0.8rem"}},[S.pinError]));
-  box.appendChild(btn("btn-gold btn-full","Unlock Member Access",function(){
+  box.appendChild(btn("btn-gold btn-full","Unlock Garage Access",function(){
     var pin=S.pinInput.join("");
     var garName=(S._loginGarage||"").trim();
     if(!garName){S.pinError="Please enter your garage name";render();return;}
@@ -713,12 +690,91 @@ function renderLoginModal(){
 function memberLockBanner(){
   var b=div("lock-banner");
   var txt=div("");
-  txt.appendChild(el("div",{className:"lock-banner-text"},["🔒 "+S.ar?"يجب أن تكون عضواً لرؤية الأسعار وإضافة القطع للسلة":"Member pricing — log in to view prices and add to cart"]));
-  txt.appendChild(el("div",{className:"lock-banner-sub"},[S.ar?"تواصل مع وصل أوتو للانضمام — 4973 3384 4859+":"Contact Wasel Auto on WhatsApp to become a member — +973 3384 4859"]));
+  txt.appendChild(el("div",{className:"lock-banner-text"},["🔒 "+(S.ar?"هذه الصفحة للورش الشريكة فقط — سجّل الدخول للمتابعة":"Partner garages only — log in to continue")]));
+  txt.appendChild(el("div",{className:"lock-banner-sub"},[S.ar?"تواصل مع وصل أوتو للانضمام — +973 3384 4859":"Contact Wasel Auto on WhatsApp to become a partner garage — +973 3384 4859"]));
   b.appendChild(txt);
-  b.appendChild(btn("btn-gold btn-sm",S.ar?"تسجيل دخول":"Member Login",function(){S.showLoginModal=true;render();}));
+  b.appendChild(btn("btn-gold btn-sm",S.ar?"تسجيل دخول":"Garage Login",function(){S.showLoginModal=true;render();}));
   return b;
 }
+
+// ── B2C PRICE GATE (car owners see price + availability after sharing contact) ──
+function parseContact(v){
+  v=(v||"").trim();
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v))return{kind:"email",value:v.toLowerCase()};
+  var digits=v.replace(/\D/g,"");
+  if(/^\+?[0-9][0-9\s\-().]{5,20}$/.test(v)&&digits.length>=7&&digits.length<=15)return{kind:"phone",value:v};
+  return null;
+}
+function getLeadUnsynced(){try{return JSON.parse(localStorage.getItem("wasel_lead_unsynced")||"[]");}catch(e){return[];}}
+function setLeadUnsynced(a){try{localStorage.setItem("wasel_lead_unsynced",JSON.stringify(a));}catch(e){}}
+function sendLead(entry){
+  if(!WASEL_CLOUD_URL)return Promise.resolve(false);
+  return fetch(WASEL_CLOUD_URL,{method:"POST",mode:"no-cors",keepalive:true,headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({type:"lead",entry:entry})}).then(function(){return true;}).catch(function(){return false;});
+}
+function queueLead(entry){
+  if(!WASEL_CLOUD_URL)return;
+  var q=getLeadUnsynced();q.push(entry);setLeadUnsynced(q);
+  sendLead(entry).then(function(ok){if(ok)setLeadUnsynced(getLeadUnsynced().filter(function(e){return e.id!==entry.id;}));});
+}
+function flushLeads(){
+  if(!WASEL_CLOUD_URL)return;
+  getLeadUnsynced().forEach(function(entry){
+    sendLead(entry).then(function(ok){if(ok)setLeadUnsynced(getLeadUnsynced().filter(function(e){return e.id!==entry.id;}));});
+  });
+}
+function saveLead(c){
+  var entry={id:"LD-"+Date.now().toString(36).toUpperCase(),contact:c.value,kind:c.kind,date:today(),ts:new Date().toISOString(),vin:S.vin||"",search:S.desc||""};
+  var log=getLog("wasel_b2c_leads");log.unshift(entry);saveLog("wasel_b2c_leads",log);
+  try{localStorage.setItem("wasel_b2c_lead",JSON.stringify({contact:c.value,kind:c.kind}));}catch(e){}
+  S.lead={contact:c.value,kind:c.kind};
+  queueLead(entry);
+}
+function renderLeadModal(){
+  var ov=div("ov");
+  ov.addEventListener("click",function(){S.showLeadModal=false;S.leadError="";render();});
+  var box=div("member-gate");
+  box.addEventListener("click",function(e){e.stopPropagation();});
+  box.appendChild(el("div",{style:{fontSize:"2.4rem",marginBottom:"0.6rem"}},["🔓"]));
+  box.appendChild(el("h2",{},[S.ar?"اعرض الأسعار والتوفر":"See prices & availability"]));
+  box.appendChild(el("p",{},[S.ar?"للمشترين الأفراد: أدخل رقم واتساب أو بريدك الإلكتروني لعرض الأسعار والتوفر — مجاناً":"Car owners: enter your WhatsApp number or email to see prices and stock — it's free."]));
+  var ci=inp("",S.ar?"رقم واتساب أو بريد إلكتروني":"WhatsApp number or email","",function(v){S._leadInput=v;});
+  ci.style.textAlign="center";ci.style.marginBottom="0.8rem";ci.style.background="#1a1a1a";ci.style.border="2px solid #333";ci.style.color="white";ci.style.borderRadius="9px";
+  ci.addEventListener("keydown",function(e){if(e.key==="Enter")submitLead();});
+  box.appendChild(ci);
+  if(S.leadError)box.appendChild(el("div",{style:{color:"#ff9090",fontSize:"0.78rem",fontFamily:"'JetBrains Mono'",marginBottom:"0.8rem"}},[S.leadError]));
+  function submitLead(){
+    var c=parseContact(S._leadInput||ci.value);
+    if(!c){S.leadError=S.ar?"أدخل رقم هاتف صحيح أو بريداً إلكترونياً صحيحاً":"Please enter a valid phone number or email address";render();return;}
+    saveLead(c);S.showLeadModal=false;S.leadError="";S._leadInput="";
+    showToast("✓ Thanks! Prices and availability unlocked");
+  }
+  box.appendChild(btn("btn-gold btn-full",S.ar?"اعرض الأسعار":"Show prices",submitLead));
+  box.appendChild(el("div",{style:{fontSize:"0.68rem",color:"#999",marginTop:"0.8rem",lineHeight:"1.5"}},[S.ar?"بالمتابعة توافق على أن تتواصل معك وصل أوتو بخصوص القطع.":"By continuing you agree that Wasel Auto may contact you about parts and prices."]));
+  box.appendChild(el("div",{style:{marginTop:"1rem",display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap"}},[
+    el("button",{className:"btn btn-gh btn-sm",onClick:function(){S.showLeadModal=false;S.showLoginModal=true;S.selPart=null;render();}},[S.ar?"ورشة؟ سجّل الدخول":"Garage? Log in"]),
+    el("button",{className:"btn btn-gh btn-sm",onClick:function(){S.showLeadModal=false;S.leadError="";render();}},[S.ar?"إغلاق":"Close"]),
+  ]));
+  ov.appendChild(box);
+  return ov;
+}
+function priceGateBanner(){
+  if(S.member)return null;
+  var b=div("lock-banner");
+  var txt=div("");
+  if(S.lead){
+    txt.appendChild(el("div",{className:"lock-banner-text"},["✓ "+(S.ar?"تعرض الأسعار المعلنة والتوفر (لا تشمل ضريبة القيمة المضافة 10٪)":"Showing listed prices & availability (excl. 10% VAT)")]));
+    txt.appendChild(el("div",{className:"lock-banner-sub"},[S.ar?"الورش الشريكة: سجّلوا الدخول لأسعار الشركاء":"Garages: log in for partner pricing and ordering"]));
+    b.appendChild(txt);
+    b.appendChild(btn("btn-gold btn-sm",S.ar?"دخول الورش":"Garage Login",function(){S.showLoginModal=true;render();}));
+  } else {
+    txt.appendChild(el("div",{className:"lock-banner-text"},["🔓 "+(S.ar?"مالك سيارة؟ اعرف الأسعار والتوفر مجاناً":"Car owner? See prices & availability — free")]));
+    txt.appendChild(el("div",{className:"lock-banner-sub"},[S.ar?"فقط أدخل رقم واتساب أو بريدك الإلكتروني":"Just share your WhatsApp number or email. Garages: log in for partner pricing."]));
+    b.appendChild(txt);
+    b.appendChild(btn("btn-gold btn-sm",S.ar?"اعرض الأسعار":"See Prices",openLeadGate));
+  }
+  return b;
+}
+function openLeadGate(){S.showLeadModal=true;S.leadError="";S._leadInput="";render();}
 
 // ── SEARCH TAB ────────────────────────────────────────────────────────
 function renderSearch(){
@@ -735,17 +791,21 @@ function renderSearch(){
   sbox.appendChild(modeRow);
 
   if(S.searchMode==="bulk"){
-    var bvi=inp("",S.ar?"مثال: JNRAZ2NY4E9041626":"e.g. JNRAZ2NY4E9041626",S.vin,function(v){S.vin=v;});
+    var bvi=inp("",S.ar?"مثال: JNRAZ2NY4E9041626":"e.g. JNRAZ2NY4E9041626",S.vin,function(v){S.vin=v;vinChanged();});
     sbox.appendChild(ig(S.ar?"🚗 رقم الشاسيه (اختياري)":"🚗 VIN / Chassis Number (optional)",bvi));
+    var bVehBox=div("");S._vehBox=bVehBox;sbox.appendChild(bVehBox);
     var bTa=el("textarea",{rows:"8",placeholder:"Paste your parts list — one part per line, e.g.:\nPiston\nPiston Rings\nCrankshaft Bearings\nOil Pump\nSpark Plugs x4\nTiming Chain Kit",style:{width:"100%",padding:"10px",border:"1.5px solid var(--bdr)",borderRadius:"8px",fontFamily:"inherit",fontSize:"0.85rem",resize:"vertical"}});
     bTa.value=S.bulkText||"";
-    bTa.addEventListener("input",function(){S.bulkText=bTa.value;});
+    bTa.addEventListener("input",function(){S.bulkText=bTa.value;syncBulk();});
     sbox.appendChild(el("label",{className:"il",style:{marginTop:"0.7rem",display:"block"}},[S.ar?"📋 قائمة القطع المطلوبة":"📋 Parts Needed (one per line)"]));
     sbox.appendChild(bTa);
     sbox.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"6px"}},["We match every line against our catalogue in one go — like pasting a garage enquiry list straight from WhatsApp. Numbers, dashes and quantities (e.g. \"x2\", \"2 Pcs\") are handled automatically."]));
     var bbrow=div("",null,{style:{display:"flex",gap:"7px",marginTop:"0.8rem"}});
-    bbrow.appendChild(btn("btn-r btn-lg btn-full",S.aiLoad?"Searching…":"🔍 Find These Parts",doBulkAI,S.aiLoad||!S.bulkText||!S.bulkText.trim()));
-    if(S.bulkResults&&S.bulkResults.length>0)bbrow.appendChild(btn("btn-gh","Clear",function(){S.bulkText="";S.bulkResults=null;render();}));
+    function bulkDisabled(){return !!(S.aiLoad||!S.bulkText||!S.bulkText.trim());}
+    var bulkFind=btn("btn-r btn-lg btn-full",S.aiLoad?"Searching…":"🔍 Find These Parts",doBulkAI,bulkDisabled());
+    function syncBulk(){bulkFind.disabled=bulkDisabled();}
+    bbrow.appendChild(bulkFind);
+    if(S.bulkResults&&S.bulkResults.length>0)bbrow.appendChild(btn("btn-gh","Clear",function(){S.bulkText="";S.bulkResults=null;S.vin="";S.veh=null;render();}));
     sbox.appendChild(bbrow);
     if(S.aiLoad)sbox.appendChild(div("loading",[div("spin"),"Matching your list against our catalogue…"]));
     inner.appendChild(sbox);hero.appendChild(inner);wrap.appendChild(hero);
@@ -754,13 +814,14 @@ function renderSearch(){
   }
 
   var srow=div("srow");
-  var vi=inp("",S.ar?"مثال: JTDZN3EU0E329":"e.g. JTDZN3EU0E329",S.vin,function(v){S.vin=v;});
+  var vi=inp("",S.ar?"مثال: JNRAZ2NY4E9041626":"e.g. JNRAZ2NY4E9041626",S.vin,function(v){S.vin=v;syncFind();vinChanged();});
   vi.addEventListener("keydown",function(e){if(e.key==="Enter")doAI();});
   srow.appendChild(ig(S.ar?"🚗 رقم الشاسيه":"🚗 VIN / Chassis Number",vi));
-  var di=inp("",S.ar?"مثال: تيل فرامل أمامي":"e.g. front brake pads, oil filter…",S.desc,function(v){S.desc=v;});
+  var di=inp("",S.ar?"مثال: تيل فرامل أمامي":"e.g. front brake pads, oil filter…",S.desc,function(v){S.desc=v;syncFind();});
   di.addEventListener("keydown",function(e){if(e.key==="Enter")doAI();});
   srow.appendChild(ig(S.ar?"📝 وصف القطعة":"📝 Part Description",di));
   sbox.appendChild(srow);
+  var vehBox=div("");S._vehBox=vehBox;sbox.appendChild(vehBox);
   var fileInp=el("input",{type:"file",accept:"image/*",style:{display:"none"}});
   var dzone=div("dzone"+(S.drag?" drag":""));
   if(S.imgSrc){dzone.appendChild(el("img",{src:S.imgSrc,style:{maxHeight:"110px",borderRadius:"7px",objectFit:"cover"}}));}
@@ -773,8 +834,11 @@ function renderSearch(){
   sbox.appendChild(el("label",{className:"il",style:{marginTop:"0.7rem",display:"block"}},[S.ar?"📷 صورة القطعة (اختياري)":"📷 Part Photo (optional)"]));
   sbox.appendChild(dzone);sbox.appendChild(fileInp);
   var brow=div("",null,{style:{display:"flex",gap:"7px",marginTop:"0.8rem"}});
-  brow.appendChild(btn("btn-r btn-lg btn-full",S.aiLoad?S.ar?"جارٍ البحث…":"Searching…":S.ar?"🔍 ابحث عن القطعة":"🔍 Find This Part",doAI,S.aiLoad||(!S.vin&&!S.desc&&!S.imgB64)));
-  if(S.vin||S.desc||S.imgSrc)brow.appendChild(btn("btn-gh",S.ar?"مسح":"Clear",function(){S.vin="";S.desc="";S.imgSrc=null;S.imgB64=null;S.aiRes=null;S.hls=[];S.showRFQ=false;render();}));
+  function findDisabled(){return !!(S.aiLoad||(!S.vin&&!S.desc&&!S.imgB64));}
+  var findBtn=btn("btn-r btn-lg btn-full",S.aiLoad?S.ar?"جارٍ البحث…":"Searching…":S.ar?"🔍 ابحث عن القطعة":"🔍 Find This Part",doAI,findDisabled());
+  function syncFind(){findBtn.disabled=findDisabled();}
+  brow.appendChild(findBtn);
+  brow.appendChild(btn("btn-gh",S.ar?"مسح":"Clear",function(){S.vin="";S.desc="";S.imgSrc=null;S.imgB64=null;S.aiRes=null;S.hls=[];S.showRFQ=false;S.veh=null;render();}));
   sbox.appendChild(brow);
   if(S.aiLoad)sbox.appendChild(div("loading",[div("spin"),S.ar?"البحث في شبكة القطع…":"Searching Bahrain parts network…"]));
   if(S.aiRes){
@@ -787,7 +851,7 @@ function renderSearch(){
     var tgs=div("aitags");
     (S.aiRes.makes||[]).forEach(function(m){tgs.appendChild(span("aitag","🚘 "+m));});
     (S.aiRes.models||[]).forEach(function(m){tgs.appendChild(span("aitag","📋 "+m));});
-    if(S.aiRes.yearRange)tgs.appendChild(span("aitag","📅 "+S.aiRes.yearRange.from+"–"+S.aiRes.yearRange.to));
+    if(S.aiRes.yearRange)tgs.appendChild(span("aitag","📅 "+(S.aiRes.yearRange.from===S.aiRes.yearRange.to?S.aiRes.yearRange.from:S.aiRes.yearRange.from+"–"+S.aiRes.yearRange.to)));
     ab.appendChild(tgs);
     if(S.aiRes.notes)ab.appendChild(div("ainotes",["💡 "+S.aiRes.notes]));
     if(S.hls.length>0)ab.appendChild(el("div",{style:{marginTop:".8rem",padding:"6px 10px",background:"rgba(21,128,61,.12)",border:"1px solid rgba(21,128,61,.3)",borderRadius:"6px",fontSize:".74rem",color:"#4ade80",fontWeight:"700"}},["✓ "+S.hls.length+" parts found in stock"]));
@@ -797,9 +861,10 @@ function renderSearch(){
   inner.appendChild(sbox);hero.appendChild(inner);wrap.appendChild(hero);
   if(S.hls.length>0){
     var ps=div("psec");
-    ps.appendChild(div("hlbanner",["⚡ "+S.hls.length+" parts found matching your search"]));
+    var gb3=priceGateBanner();if(gb3)ps.appendChild(gb3);
+    ps.appendChild(div("hlbanner",["⚡ "+S.hls.length+" part"+(S.hls.length>1?"s":"")+" found"+(S.veh&&S.veh.make?" for your "+vehLabel(S.veh):" matching your search")]));
     var pg=div("pgrid");
-    allParts().filter(function(p){return S.hls.indexOf(p.id)>-1;}).forEach(function(p){pg.appendChild(makeCard(p,true));});
+    S.hls.map(function(id){return allParts().find(function(p){return p.id===id;});}).filter(Boolean).forEach(function(p){pg.appendChild(makeCard(p,true));});
     ps.appendChild(pg);wrap.appendChild(ps);
   }
   if(S.showRFQ||(S.aiRes&&S.hls.length===0)){var rs=div("psec");rs.appendChild(rfqBox());wrap.appendChild(rs);}
@@ -833,7 +898,7 @@ function renderBrowse(){
   });
   hdr.appendChild(el("span",{style:{fontFamily:"'JetBrains Mono'",fontSize:"0.75rem",color:"var(--mut)",background:"var(--surf2)",padding:"3px 10px",borderRadius:"99px",border:"1px solid var(--bdr)"}},[filtered.length+" parts"]));
   wrap.appendChild(hdr);
-  if(!S.member)wrap.appendChild(memberLockBanner());
+  var gb=priceGateBanner();if(gb)wrap.appendChild(gb);
   var si=inp("",S.ar?"ابحث بالاسم، الماركة، الموديل…":"Search by name, make, model, brand…",S.srch,function(v){S.srch=v;render();},{style:{background:"white",border:"1.5px solid var(--bdr)",marginBottom:"0.8rem"}});
   wrap.appendChild(si);
   var fr=div("frow");
@@ -870,16 +935,20 @@ function makeCard(part,hl){
   var compat=part.make==="Universal"?"Universal — All Vehicles":part.make+" "+part.model+" · "+part.yf+"–"+part.yt;
   card.appendChild(div("pcard-compat",[compat]));
   if(S.member){
-    var pr=div("pcard-price",[part.waselPrice.toFixed(3)," ",el("span",{},["BHD"])]);
-    var save=((part.retailPrice-part.waselPrice)/part.retailPrice*100).toFixed(0);
-    card.appendChild(pr);
-    card.appendChild(el("div",{style:{fontSize:"0.65rem",color:"var(--grn)",fontWeight:"700",marginTop:"2px"}},["You save "+save+"% vs retail ("+part.retailPrice.toFixed(3)+" BHD)"]));
+    card.appendChild(div("pcard-price",[partnerPrice(part).toFixed(3)," ",el("span",{},["BHD"])]));
+    card.appendChild(el("div",{style:{fontSize:"0.65rem",color:"var(--grn)",fontWeight:"700",marginTop:"2px"}},[S.ar?"سعر الشريك · قبل ضريبة 10٪":"Partner price · excl. 10% VAT"]));
+  } else if(S.lead){
+    card.appendChild(div("pcard-price",[part.waselPrice.toFixed(3)," ",el("span",{},["BHD"])]));
+    card.appendChild(el("div",{className:"gate-note"},[S.ar?"قبل ضريبة القيمة المضافة 10٪":"excl. 10% VAT"]));
   } else {
-    card.appendChild(div("pcard-price-lock",["🔒 Members Only — Login to view price"]));
+    var lk=div("pcard-price-lock",["🔓 "+(S.ar?"اعرض السعر والتوفر":"See price & availability")]);
+    lk.style.cursor="pointer";
+    lk.addEventListener("click",function(e){e.stopPropagation();openLeadGate();});
+    card.appendChild(lk);
   }
   var ft=div("pcard-footer");
   ft.appendChild(span("war-tag","✓ "+part.warranty));
-  ft.appendChild(el("span",{style:{fontSize:"0.65rem",color:"var(--mut)"}},["Available ✓"]));
+  if(canSeePrice()){var si0=stockInfo(part);ft.appendChild(el("span",{className:si0.cls,style:{fontSize:"0.65rem"}},[si0.txt]));}
   card.appendChild(ft);
   card.appendChild(div("pcard-cta",[S.member?"📞 Tap to enquire / add to cart":"📞 Enquire via Wasel Auto"]));
   return card;
@@ -898,10 +967,13 @@ function renderPartModal(part){
     el("div",{},[el("div",{style:{fontSize:".62rem",color:"#888",fontFamily:"'JetBrains Mono'",marginBottom:"3px"}},[part.brand+" · "+part.cat]),el("div",{className:"mod-pname"},[S.ar?part.nameAr:part.name])])
   ]));
   if(S.member){
+    mh.appendChild(el("div",{className:"mod-price"},[partnerPrice(part).toFixed(3)," ",el("span",{style:{fontSize:"0.85rem",color:"#aaa"}},["BHD"])]));
+    mh.appendChild(el("div",{style:{fontSize:"0.72rem",color:"#4ade80",marginTop:"2px"}},["✓ "+(S.ar?"سعر الشريك · قبل ضريبة القيمة المضافة 10٪":"Partner price · excl. 10% VAT")]));
+  } else if(S.lead){
     mh.appendChild(el("div",{className:"mod-price"},[part.waselPrice.toFixed(3)," ",el("span",{style:{fontSize:"0.85rem",color:"#aaa"}},["BHD"])]));
-    mh.appendChild(el("div",{style:{fontSize:"0.72rem",color:"#4ade80",marginTop:"2px"}},["✓ You save "+((part.retailPrice-part.waselPrice)/part.retailPrice*100).toFixed(0)+"% vs retail price of "+part.retailPrice.toFixed(3)+" BHD"]));
+    mh.appendChild(el("div",{style:{fontSize:"0.72rem",color:"#aaa",marginTop:"2px"}},[S.ar?"قبل ضريبة القيمة المضافة 10٪":"excl. 10% VAT"]));
   } else {
-    mh.appendChild(div("pcard-price-lock",["🔒 Login as member to view price"]));
+    mh.appendChild(btn("btn-gold btn-sm","🔓 "+(S.ar?"اعرض السعر والتوفر":"See price & availability"),function(){openLeadGate();}));
   }
   mod.appendChild(mh);
   var mb=div("mod-body");
@@ -909,20 +981,21 @@ function renderPartModal(part){
     var rr=div("mrow",[el("span",{className:"mrl"},[r[0]]),el("span",{style:{fontSize:".83rem",fontWeight:"600"}},[r[1]])]);
     mb.appendChild(rr);
   });
+  if(canSeePrice()){var si1=stockInfo(part);mb.appendChild(div("mrow",[el("span",{className:"mrl"},[S.ar?"التوفر":"Availability"]),el("span",{className:si1.cls,style:{fontSize:".83rem"}},[si1.txt])]));}
   mb.appendChild(div("mod-notice",["🔒 All enquiries go through Wasel Auto only. We protect supplier confidentiality and confirm final price within minutes."]));
   mod.appendChild(mb);
   var acts=div("mod-actions");
-  var waMsg=encodeURIComponent("Hi Wasel Auto,\nEnquiring about: "+part.name+"\nVehicle: "+part.make+" "+part.model+" ("+part.yf+"–"+part.yt+")\nPlease confirm availability and price.");
+  var waMsg=encodeURIComponent("Hi Wasel Auto,\nEnquiring about: "+part.name+"\nVehicle: "+part.make+" "+part.model+" ("+part.yf+"–"+part.yt+")"+(S.veh&&S.veh.make&&S.veh.vin&&S.veh.vin.length===17?"\nMy car: "+vehLabel(S.veh)+" — VIN "+S.veh.vin:"")+"\nPlease confirm availability and price.");
   acts.appendChild(el("a",{href:"https://wa.me/97333844859?text="+waMsg,target:"_blank",rel:"noopener",className:"btn btn-wa btn-full"},["💬 WhatsApp Enquiry — Wasel Auto"]));
   if(S.member){
     acts.appendChild(btn("btn-r btn-full","🛒 Add to Cart",function(){
       var ex=S.cart.find(function(i){return i.part.id===part.id;});
-      if(ex)ex.qty+=1;else S.cart.push({part:part,qty:1,margin:defMarkup(part.waselPrice)});
+      if(ex)ex.qty+=1;else S.cart.push({part:part,qty:1});
       S.selPart=null;
       showToast("✓ "+part.name+" added to cart");
     }));
   } else {
-    acts.appendChild(btn("btn-gold btn-full","🔐 Login to Add to Cart",function(){S.selPart=null;S.showLoginModal=true;render();}));
+    acts.appendChild(btn("btn-gold btn-full","🔐 "+(S.ar?"ورشة؟ سجّل الدخول لسعر الشريك والطلب":"Garage? Log in for partner price & ordering"),function(){S.selPart=null;S.showLoginModal=true;render();}));
   }
   acts.appendChild(btn("btn-gh btn-full","Close",function(){S.selPart=null;render();}));
   mod.appendChild(acts);
@@ -954,43 +1027,14 @@ function renderCart(){
       wrap.appendChild(emp);
       return wrap;
     }
-    // Margin mode toggle
-    var mmRow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.9rem",alignItems:"center",flexWrap:"wrap"}});
-    mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Markup:"]));
-    mmRow.appendChild(btn(S.marginMode!=="overall"?"btn-r btn-sm":"btn-gh btn-sm","Per Item",function(){S.marginMode="item";render();}));
-    mmRow.appendChild(btn(S.marginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","Same Amount for All",function(){
-      S.marginMode="overall";
-      S.cart.forEach(function(i){i.margin=S.overallMargin!=null?S.overallMargin:defMarkup(i.part.waselPrice);});
-      render();
-    }));
-    if(S.marginMode==="overall"){
-      var omInp=el("input",{type:"number",step:"0.001",style:{width:"72px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
-      omInp.value=(S.overallMargin!=null?S.overallMargin:20).toFixed(3);
-      omInp.addEventListener("input",function(){
-        S.overallMargin=parseFloat(omInp.value)||0;
-        S.cart.forEach(function(i){i.margin=S.overallMargin;});
-        render();
-      });
-      mmRow.appendChild(omInp);
-      mmRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["BHD added to every item"]));
-    }
-    wrap.appendChild(mmRow);
-    // Cart items
+    // Cart items — partner prices are fixed by Wasel Auto
     S.cart.forEach(function(item){
+      var unit=partnerPrice(item.part);
       var ci=div("cart-item");
       var info=div("cart-item-info");
       info.appendChild(el("div",{className:"cart-item-name"},[S.ar?item.part.nameAr:item.part.name]));
       info.appendChild(el("div",{className:"cart-item-meta"},[item.part.brand+" · "+item.part.cat]));
-      info.appendChild(el("div",{className:"cart-item-price"},[item.part.waselPrice.toFixed(3)+" BHD per unit (Wasel price)"]));
-      var mrow=div("",null,{style:{display:"flex",alignItems:"center",gap:"6px",marginTop:"4px"}});
-      mrow.appendChild(el("span",{style:{fontSize:"0.68rem",color:"var(--mut)"}},[S.ar?"هامشك (د.ب)":"Your markup (BHD)"]));
-      var mInp=el("input",{type:"number",step:"0.001",disabled:S.marginMode==="overall",style:{width:"68px",padding:"3px 6px",fontSize:"0.75rem",border:"1px solid var(--bdr)",borderRadius:"5px",opacity:S.marginMode==="overall"?"0.5":"1"}});
-      mInp.value=(item.margin!=null?item.margin:defMarkup(item.part.waselPrice)).toFixed(3);
-      mInp.addEventListener("input",function(){item.margin=parseFloat(mInp.value)||0;render();});
-      mrow.appendChild(mInp);
-      var sell=item.part.waselPrice+(item.margin!=null?item.margin:defMarkup(item.part.waselPrice));
-      mrow.appendChild(el("span",{style:{fontSize:"0.68rem",color:"var(--grn)",fontWeight:"600"}},["→ "+sell.toFixed(3)+" BHD to your customer"]));
-      info.appendChild(mrow);
+      info.appendChild(el("div",{className:"cart-item-price"},[unit.toFixed(3)+" BHD per unit (partner price)"]));
       ci.appendChild(info);
       var qc=div("cart-qty");
       qc.appendChild(el("button",{className:"qty-btn",onClick:function(){if(item.qty>1)item.qty--;else S.cart=S.cart.filter(function(i){return i.part.id!==item.part.id;});render();}},["−"]));
@@ -1000,27 +1044,19 @@ function renderCart(){
       del.style.marginLeft="8px";
       qc.appendChild(del);
       ci.appendChild(qc);
-      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD((item.part.waselPrice+(item.margin!=null?item.margin:defMarkup(item.part.waselPrice)))*item.qty)]));
+      ci.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.1rem",color:"var(--dark)",marginLeft:"auto",paddingLeft:"12px"}},[fmtBHD(r3(unit*item.qty))]));
       wrap.appendChild(ci);
     });
-    var yourProfit=S.cart.reduce(function(a,i){return a+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice))*i.qty;},0);
-    wrap.appendChild(el("div",{className:"inv-profit-note",style:{marginBottom:"1rem"}},["💰 Total markup you're keeping on this order: "+fmtBHD(yourProfit)+". This is for your reference only — it never appears on the Wasel Auto quotation or on your customer's invoice."]));
-    // Summary
-    var sub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
-    var markedSub=S.cart.reduce(function(a,i){return a+(i.part.waselPrice+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice)))*i.qty;},0);
-    var fee=sub*0.045;
-    var isBulkyCart=S.cart.some(function(i){return !!i.part.bulky;});
-    var deliveryFeeCart=isBulkyCart?6:2;
-    var total=markedSub+fee+deliveryFeeCart;
+    // Summary (same numbers the quotation will show)
+    var oc=calcOrder(S.cart);
     var cs=div("cart-summary");
-    [[S.ar?"المجموع الفرعي":"Subtotal",fmtBHD(markedSub)],[S.ar?"التوصيل":"Delivery"+(isBulkyCart?" (bulky item)":""),fmtBHD(deliveryFeeCart)],[S.ar?"رسوم الخدمة":"Service Fee",fmtBHD(fee)]].forEach(function(r){
+    [[S.ar?"المجموع الفرعي":"Subtotal",fmtBHD(oc.subtotal)],[S.ar?"التوصيل":"Delivery"+(oc.bulky?" (bulky item)":""),fmtBHD(oc.delivery)],[S.ar?"رسوم الخدمة":"Service Fee",fmtBHD(oc.fee)],[S.ar?"ضريبة القيمة المضافة (10٪)":"VAT (10%)",fmtBHD(oc.vat)]].forEach(function(r){
       cs.appendChild(div("summary-row",[el("span",{},[r[0]]),el("span",{style:{fontWeight:"600"}},[r[1]])]));
     });
     var gr=div("summary-row total");
     gr.appendChild(el("span",{},[S.ar?"الإجمالي":"TOTAL"]));
-    gr.appendChild(el("span",{style:{color:"var(--red)"}},[fmtBHD(total)]));
+    gr.appendChild(el("span",{style:{color:"var(--red)"}},[fmtBHD(oc.total)]));
     cs.appendChild(gr);
-    cs.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--grn)",fontWeight:"600",marginTop:"8px"}},["✓ You save "+fmtBHD(S.cart.reduce(function(a,i){return a+(i.part.retailPrice-i.part.waselPrice)*i.qty;},0))+" vs retail prices"]));
     wrap.appendChild(cs);
     wrap.appendChild(el("div",{style:{display:"flex",gap:"8px",marginTop:"1rem"}},[
       btn("btn-gh","← Continue Shopping",function(){S.tab="browse";render();}),
@@ -1087,6 +1123,7 @@ function buildQTWhatsApp(qt){
   lines.push("","Subtotal: "+qt.subtotal.toFixed(3)+" BHD");
   lines.push("Delivery: "+(qt.deliveryFee||0).toFixed(3)+" BHD");
   lines.push("Service Fee: "+qt.serviceFee.toFixed(3)+" BHD");
+  if(qt.vat!=null)lines.push("VAT (10%): "+qt.vat.toFixed(3)+" BHD");
   lines.push("TOTAL: "+qt.total.toFixed(3)+" BHD");
   lines.push("Deliver to: "+(qt.garage.address||"—"));
   if(qt.garage.notes)lines.push("Notes: "+qt.garage.notes);
@@ -1095,25 +1132,22 @@ function buildQTWhatsApp(qt){
 }
 
 function generateQuotation(){
-  var rawSub=S.cart.reduce(function(a,i){return a+i.part.waselPrice*i.qty;},0);
-  var markedSub=S.cart.reduce(function(a,i){return a+(i.part.waselPrice+(i.margin!=null?i.margin:defMarkup(i.part.waselPrice)))*i.qty;},0);
-  var fee=rawSub*0.045;
-  var isBulky=S.cart.some(function(i){return !!i.part.bulky;});
-  var deliveryFee=isBulky?6:2;
-  var total=markedSub+fee+deliveryFee;
+  var oc=calcOrder(S.cart);
   var qt={
     ref:genRef("QT"),date:today(),status:"pending_payment",
     garage:Object.assign({},S.checkoutGarage),
     delivery:"Delivery after Benefit Pay confirmation",
-    items:S.cart.map(function(i){return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:i.part.waselPrice,total:i.part.waselPrice*i.qty,margin:i.margin!=null?i.margin:defMarkup(i.part.waselPrice),bulky:!!i.part.bulky};}),
-    subtotal:markedSub,serviceFee:fee,deliveryFee:deliveryFee,total:total,
+    // unitPrice is the partner price the garage pays. listPrice is kept for Wasel Auto's own records only and is never printed.
+    items:S.cart.map(function(i){var u=partnerPrice(i.part);return{name:i.part.name,brand:i.part.brand,cat:i.part.cat,warranty:i.part.warranty,qty:i.qty,unitPrice:u,total:r3(u*i.qty),listPrice:i.part.waselPrice,bulky:!!i.part.bulky};}),
+    subtotal:oc.subtotal,serviceFee:oc.fee,deliveryFee:oc.delivery,vat:oc.vat,vatRate:VAT_RATE,total:oc.total,
     member:S.member?S.member.garageName:"Unknown",
   };
   var log=getLog("wasel_quotations");log.unshift(qt);saveLog("wasel_quotations",log);
   S.quotations=log;S.activeQT=qt;S.checkoutStep=2;render();
 }
-function itemSellUnit(item){return item.unitPrice+(item.margin!=null?item.margin:defMarkup(item.unitPrice));}
-function itemSellTotal(item){return itemSellUnit(item)*item.qty;}
+// (older test quotations may still carry a margin field — it is ignored for new ones)
+function itemSellUnit(item){return item.unitPrice+(item.margin||0);}
+function itemSellTotal(item){return r3(itemSellUnit(item)*item.qty);}
 
 function renderQuotationDoc(qt){
   var isInvoice=qt.status==="paid";
@@ -1125,6 +1159,7 @@ function renderQuotationDoc(qt){
   ll.appendChild(el("div",{className:"pdf-logo"},["Wasel ",el("span",{},["Auto"])]));
   ll.appendChild(el("div",{className:"pdf-logo-sub"},["wasel-auto.vercel.app · +973 3384 4859"]));
   ll.appendChild(el("div",{className:"pdf-logo-sub"},["waselauto26@gmail.com · Manama, Bahrain"]));
+  if(WASEL_VAT_NO)ll.appendChild(el("div",{className:"pdf-logo-sub"},["VAT No: "+WASEL_VAT_NO]));
   hdr.appendChild(ll);
   var rr=div("pdf-right");
   rr.appendChild(el("div",{className:"pdf-doc-type "+(isInvoice?"invoice":"quotation")},[isInvoice?"INVOICE":"QUOTATION"]));
@@ -1145,6 +1180,7 @@ function renderQuotationDoc(qt){
   pt.appendChild(el("div",{className:"pdf-party-name"},[qt.garage.name||qt.member]));
   if(qt.garage.phone)pt.appendChild(el("div",{className:"pdf-party-detail"},[qt.garage.phone]));
   if(qt.garage.vehicle)pt.appendChild(el("div",{className:"pdf-party-detail"},["Vehicle: "+qt.garage.vehicle]));
+  if(qt.garage.plate)pt.appendChild(el("div",{className:"pdf-party-detail"},["Plate: "+qt.garage.plate]));
   if(qt.garage.address)pt.appendChild(el("div",{className:"pdf-party-detail"},["Deliver to: "+qt.garage.address]));
   pp.appendChild(pt);body.appendChild(pp);
   var tbl=el("table",{className:"pdf-table"});
@@ -1162,6 +1198,7 @@ function renderQuotationDoc(qt){
   var totbox=el("div",{style:{display:"flex",justifyContent:"flex-end"}});
   var tbox=div("pdf-totals-box");
   var totalRows=[["Subtotal",qt.subtotal.toFixed(3)+" BHD"],["Delivery",(qt.deliveryFee||0).toFixed(3)+" BHD"],["Service Fee",qt.serviceFee.toFixed(3)+" BHD"]];
+  if(qt.vat!=null)totalRows.push(["VAT (10%)",qt.vat.toFixed(3)+" BHD"]);
   totalRows.forEach(function(r){
     var rr2=div("pdf-total-row");rr2.appendChild(el("span",{style:{color:"var(--mut)"}},[r[0]]));rr2.appendChild(el("span",{},[r[1]]));tbox.appendChild(rr2);
   });
@@ -1189,21 +1226,225 @@ function renderQuotationDoc(qt){
   return wrap;
 }
 
-// ── VIN DECODE (free, static WMI prefix table — no API cost) ───────────
+// ── VIN DECODE (free) ─────────────────────────────────────────────────
+// 1) instant local decode (maker, model year, a few known models)  2) free NHTSA vPIC lookup for the model.
+// If neither can name the model, the customer picks it from a short list — we never guess a fitment.
 var VIN_WMI = {
-  "JTD":"Toyota","JTM":"Toyota","JTN":"Toyota","JTE":"Toyota","JT":"Toyota",
-  "JN1":"Nissan","JN6":"Nissan","JN8":"Nissan","JN":"Nissan",
-  "WBA":"BMW","WBS":"BMW","WBY":"BMW","WBX":"BMW",
-  "WDD":"Mercedes","WDC":"Mercedes","WDB":"Mercedes","WDF":"Mercedes",
-  "1HG":"Honda","JHM":"Honda","SHH":"Honda","SHS":"Honda",
-  "1FA":"Ford","1FM":"Ford","1FT":"Ford","MAJ":"Ford",
+  "JTD":"Toyota","JTM":"Toyota","JTN":"Toyota","JTE":"Toyota","JTF":"Toyota","JT3":"Toyota","JT4":"Toyota","JT2":"Toyota","4T1":"Toyota","5TD":"Toyota","2T1":"Toyota","JT":"Toyota",
+  "JTH":"Lexus","JTJ":"Lexus","JTK":"Lexus","2T2":"Lexus",
+  "JNR":"Infiniti","JNK":"Infiniti",
+  "JN1":"Nissan","JN6":"Nissan","JN8":"Nissan","JN":"Nissan","1N4":"Nissan","5N1":"Nissan",
+  "WBA":"BMW","WBS":"BMW","WBY":"BMW","WBX":"BMW","5UX":"BMW",
+  "WDD":"Mercedes","WDC":"Mercedes","WDB":"Mercedes","WDF":"Mercedes","4JG":"Mercedes",
+  "1HG":"Honda","JHM":"Honda","SHH":"Honda","SHS":"Honda","2HG":"Honda","5J6":"Honda",
+  "1FA":"Ford","1FM":"Ford","1FT":"Ford","MAJ":"Ford","1FD":"Ford",
+  "1GN":"Chevrolet","1G1":"Chevrolet","1GC":"Chevrolet","3GN":"Chevrolet","1GK":"GMC","1GT":"GMC","1GY":"Cadillac",
+  "WAU":"Audi","WA1":"Audi","WVW":"Volkswagen","WVG":"Volkswagen","SAL":"Land Rover","SAJ":"Jaguar","WP0":"Porsche","YV1":"Volvo",
+  "KMH":"Hyundai","5NP":"Hyundai","KNA":"Kia","KND":"Kia","5XY":"Kia","JM1":"Mazda","JM3":"Mazda","JF1":"Subaru","JF2":"Subaru","JS3":"Suzuki","JMB":"Mitsubishi","JA4":"Mitsubishi",
+  "1J4":"Jeep","1C4":"Jeep","1B3":"Dodge","2B3":"Dodge"
 };
+// models we can read straight from the VIN pattern (positions 1-3 + 4-7)
+var VIN_PATTERNS = [
+  {wmi:"JNR",vds:"AZ2N",make:"Infiniti",model:"QX80"}   // QX80 / QX56 (Z62)
+];
+// names that are the same car (used both for display and for matching parts)
+var MODEL_GROUPS = [
+  {key:"QX80",names:["QX80","QX56"],label:"QX80 / QX56 (Z62)"}
+];
+var YEAR_CODES="ABCDEFGHJKLMNPRSTVWXY123456789";
+function cleanVin(v){return(v||"").toUpperCase().replace(/[\s\-]/g,"");}
+function isFullVin(v){return/^[A-HJ-NPR-Z0-9]{17}$/.test(v);}
+function normKey(x){return String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");}
+function canonMake(m){
+  var k=normKey(m);
+  var map={MERCEDESBENZ:"Mercedes",MERCEDES:"Mercedes",BMW:"BMW",INFINITI:"Infiniti",TOYOTA:"Toyota",NISSAN:"Nissan",HONDA:"Honda",FORD:"Ford",LEXUS:"Lexus"};
+  if(map[k])return map[k];
+  return String(m||"").toLowerCase().replace(/\b\w/g,function(c){return c.toUpperCase();});
+}
+function modelGroupKey(m){
+  var k=normKey(m);
+  for(var i=0;i<MODEL_GROUPS.length;i++){
+    if(MODEL_GROUPS[i].names.some(function(n){return normKey(n)===k;}))return MODEL_GROUPS[i].key;
+  }
+  return k;
+}
+function modelLabel(m){
+  var k=normKey(m);
+  for(var i=0;i<MODEL_GROUPS.length;i++){
+    if(MODEL_GROUPS[i].names.some(function(n){return normKey(n)===k;}))return MODEL_GROUPS[i].label;
+  }
+  return m||"";
+}
+function vinYear(vin){
+  if(vin.length<10)return null;
+  var i=YEAR_CODES.indexOf(vin.charAt(9));
+  if(i<0)return null;
+  var maxY=new Date().getFullYear()+1,y=2010+i;
+  if(y>maxY)y-=30;
+  return y;
+}
 function decodeVinMake(vin){
-  vin=(vin||"").toUpperCase().replace(/\s/g,"");
+  vin=cleanVin(vin);
   if(vin.length<2)return null;
   if(VIN_WMI[vin.slice(0,3)])return VIN_WMI[vin.slice(0,3)];
   if(VIN_WMI[vin.slice(0,2)])return VIN_WMI[vin.slice(0,2)];
   return null;
+}
+function localDecode(vin){
+  var out={make:decodeVinMake(vin)||"",model:"",year:vinYear(vin)};
+  for(var i=0;i<VIN_PATTERNS.length;i++){
+    var q=VIN_PATTERNS[i];
+    if(vin.slice(0,3)===q.wmi&&vin.slice(3,7)===q.vds){out.make=q.make;out.model=q.model;}
+  }
+  return out;
+}
+function fetchNhtsa(vin){
+  var ctl=(typeof AbortController!=="undefined")?new AbortController():null;
+  var to=setTimeout(function(){if(ctl)ctl.abort();},7000);
+  return fetch("https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/"+encodeURIComponent(vin)+"?format=json",ctl?{signal:ctl.signal}:{})
+    .then(function(r){clearTimeout(to);return r.json();})
+    .then(function(j){
+      var r=j&&j.Results&&j.Results[0];
+      if(!r||!r.Make)return null;
+      return{make:r.Make,model:r.Model||"",year:parseInt(r.ModelYear,10)||null};
+    }).catch(function(){clearTimeout(to);return null;});
+}
+function vehFinish(v){
+  v.status=!v.make?"unknown":(!v.model?"nomodel":"ok");
+  return v;
+}
+function decodeVehicle(vin){
+  var loc=localDecode(vin);
+  var base={vin:vin,make:loc.make,model:loc.model,year:loc.year,source:"vin"};
+  if(base.make&&base.model)return Promise.resolve(vehFinish(base));
+  return fetchNhtsa(vin).then(function(n){
+    if(n){
+      base.make=canonMake(n.make);
+      if(n.model)base.model=n.model;
+      if(n.year)base.year=n.year;
+      base.source="nhtsa";
+    }
+    return vehFinish(base);
+  });
+}
+function vehLabel(v){
+  if(!v||!v.make)return"";
+  return[v.year||"",v.make,(v.model&&v.model!=="__other")?modelLabel(v.model):""].filter(Boolean).join(" ");
+}
+function knownMakes(){
+  var out=[];
+  allParts().forEach(function(p){if(p.make!=="Universal"&&out.indexOf(p.make)<0)out.push(p.make);});
+  return out;
+}
+function knownModels(make){
+  var out=[];
+  allParts().forEach(function(p){
+    if(p.make===make&&p.model&&p.model!=="All"){
+      var lbl=modelGroupKey(p.model);
+      if(!out.some(function(o){return modelGroupKey(o)===lbl;}))out.push(p.model);
+    }
+  });
+  return out;
+}
+// Does this part fit this vehicle? (make, model and model-year must all agree)
+function partFits(p,veh){
+  if(!veh||!veh.make)return true;
+  if(p.make==="Universal")return true;
+  if(normKey(canonMake(p.make))!==normKey(canonMake(veh.make)))return false;
+  if(veh.model&&p.model&&p.model!=="All"&&modelGroupKey(p.model)!==modelGroupKey(veh.model))return false;
+  if(veh.year&&p.yf&&p.yt&&(veh.year<p.yf||veh.year>p.yt))return false;
+  return true;
+}
+// vehicle used for searching: full VIN -> decoded details; partial VIN -> maker only
+function currentVeh(){
+  var v=cleanVin(S.vin);
+  if(!v)return null;
+  if(S.veh&&S.veh.vin===v&&S.veh.make)return S.veh;
+  var mk=decodeVinMake(v);
+  return mk?{vin:v,make:mk,model:"",year:null,status:"partial"}:null;
+}
+function startDecode(v){
+  S.veh={vin:v,status:"loading",make:"",model:"",year:null};
+  paintVeh();
+  var p=decodeVehicle(v).then(function(res){
+    if(cleanVin(S.vin)===v){S.veh=res;paintVeh();}
+    return res;
+  });
+  S._vehP=p;
+  return p;
+}
+// called on every keystroke in a VIN box (no page re-render, so typing is never interrupted)
+function vinChanged(){
+  var v=cleanVin(S.vin);
+  if(S.veh&&S.veh.vin!==v){S.veh=null;}
+  if(isFullVin(v)){if(!S.veh)startDecode(v);}
+  paintVeh();
+}
+function prepareVehicle(){
+  var v=cleanVin(S.vin);
+  if(isFullVin(v)){
+    if(S.veh&&S.veh.vin===v&&S.veh.status!=="loading")return Promise.resolve();
+    if(S.veh&&S.veh.vin===v&&S._vehP)return S._vehP;
+    return startDecode(v);
+  }
+  return Promise.resolve();
+}
+function paintVeh(){
+  var box=S._vehBox;
+  if(!box||!document.body.contains(box))return;
+  box.innerHTML="";
+  var v=cleanVin(S.vin);
+  if(!v)return;
+  var c=div("vehcard");
+  var vv=S.veh;
+  if(!isFullVin(v)){
+    var bad=/[IOQ]/.test(v);
+    c.className="vehcard warn";
+    c.appendChild(el("div",{},[bad?"VINs never contain the letters I, O or Q — please re-check.":(S.ar?"أدخل رقم الشاسيه كاملاً (17 خانة) لمطابقة دقيقة — أدخلت "+v.length:"Enter all 17 characters of the VIN for an exact fit — you've entered "+v.length)]));
+    var mk=decodeVinMake(v);
+    if(mk&&!bad)c.appendChild(el("div",{className:"vs"},["Maker looks like: "+mk]));
+    box.appendChild(c);return;
+  }
+  if(!vv||vv.status==="loading"){
+    c.appendChild(el("div",{},["🔎 "+(S.ar?"جارٍ قراءة رقم الشاسيه…":"Reading your VIN…")]));
+    box.appendChild(c);return;
+  }
+  if(vv.status==="ok"){
+    c.appendChild(el("div",{className:"vt"},["🚘 "+vehLabel(vv)]));
+    c.appendChild(el("div",{className:"vs"},["VIN "+vv.vin]));
+    c.appendChild(el("div",{style:{fontSize:"0.74rem",marginTop:"3px"}},["✓ "+(S.ar?"سنعرض فقط القطع المتوافقة مع سيارتك":"We'll only show parts that fit this car")]));
+    box.appendChild(c);return;
+  }
+  // model (or everything) not identified -> ask, never guess
+  c.className="vehcard warn";
+  if(vv.make){
+    c.appendChild(el("div",{className:"vt"},["🚘 "+[vv.year||"",vv.make].filter(Boolean).join(" ")]));
+    c.appendChild(el("div",{style:{fontSize:"0.78rem"}},[S.ar?"لم نتمكن من تحديد الموديل — اختر موديل سيارتك:":"We couldn't read the model from this VIN — please select your model:"]));
+  } else {
+    c.appendChild(el("div",{className:"vt"},[S.ar?"لم نتعرف على هذا الرقم":"We couldn't identify this VIN"]));
+    c.appendChild(el("div",{style:{fontSize:"0.78rem"}},[S.ar?"اختر ماركة وموديل سيارتك:":"Please select your make and model:"]));
+    var mkSel=el("select",{});
+    mkSel.appendChild(el("option",{value:""},["Select make…"]));
+    knownMakes().forEach(function(m){mkSel.appendChild(el("option",{value:m},[m]));});
+    mkSel.addEventListener("change",function(){vv.make=mkSel.value;vv.model="";paintVeh();});
+    c.appendChild(mkSel);
+  }
+  if(vv.make){
+    var mods=knownModels(vv.make);
+    var mSel=el("select",{});
+    mSel.appendChild(el("option",{value:""},["Select model…"]));
+    mods.forEach(function(m){var o=el("option",{value:m},[modelLabel(m)]);if(vv.model&&modelGroupKey(vv.model)===modelGroupKey(m))o.selected=true;mSel.appendChild(o);});
+    mSel.appendChild(el("option",{value:"__other"},["Other / not listed"]));
+    mSel.addEventListener("change",function(){
+      if(mSel.value==="__other"){vv.model="__other";}
+      else vv.model=mSel.value;
+      if(vv.model&&vv.model!=="__other"){vv.status="ok";}
+      paintVeh();
+    });
+    c.appendChild(mSel);
+    if(vv.model==="__other")c.appendChild(el("div",{style:{fontSize:"0.74rem",marginTop:"4px"}},[S.ar?"لا توجد قطع لهذا الموديل حالياً — يمكنك إرسال طلب وسنوفرها لك.":"We don't stock parts for that model yet — send a request and we'll source them for you."]));
+  }
+  box.appendChild(c);
 }
 
 // ── CATALOGUE HELPER (merges hardcoded PARTS with admin-approved supplier parts) ─
@@ -1227,53 +1468,64 @@ function handleImg(file){
 function doAI(){
   if(!S.vin&&!S.desc&&!S.imgB64)return;
   S.aiLoad=true;S.aiRes=null;S.hls=[];S.showRFQ=false;render();
-  setTimeout(function(){
-    var pool=allParts();
-    var vinMake=S.vin?decodeVinMake(S.vin):null;
-    if(vinMake)pool=pool.filter(function(p){return p.make===vinMake||p.make==="Universal";});
+  prepareVehicle().then(function(){setTimeout(runSearch,450);});
+  function runSearch(){
+    var veh=currentVeh();
+    var pool=allParts().filter(function(p){return partFits(p,veh);});   // only parts that fit this vehicle
     var kw=(S.desc||"").toLowerCase().split(/\s+/).filter(function(w){return w.length>1;});
     function score(p){
-      var s=0,kwHit=false;
-      if(vinMake&&p.make===vinMake)s+=3;
+      var sc=0,kwHit=false;
+      if(veh&&p.make!=="Universal")sc+=3;
       if(kw.length){
         var hay=(p.name+" "+p.nameAr+" "+p.cat+" "+p.make+" "+p.model+" "+p.brand).toLowerCase();
-        kw.forEach(function(w){if(hay.indexOf(w)>-1){s+=2;kwHit=true;}});
+        kw.forEach(function(w){if(hay.indexOf(w)>-1){sc+=2;kwHit=true;}});
       }
-      return{s:s,kwHit:kwHit};
+      return{s:sc,kwHit:kwHit};
     }
     var scored=pool.map(function(p){var sc=score(p);return{p:p,s:sc.s,kwHit:sc.kwHit};}).filter(function(x){
-      // if a description was typed, it must actually text-match — a VIN match alone isn't enough once the person said what they need
-      return kw.length>0?x.kwHit:x.s>0;
+      // if a description was typed it must actually text-match; with only a VIN, every part that fits the car is listed
+      return kw.length>0?x.kwHit:(veh?x.p.make!=="Universal":false);
     });
     scored.sort(function(a,b){return b.s-a.s;});
-    var matches=scored.map(function(x){return x.p;}).slice(0,8);
+    var matches=scored.map(function(x){return x.p;}).slice(0,12);
     S.hls=matches.map(function(p){return p.id;});
-    var makesFound=[],modelsFound=[];
-    matches.forEach(function(p){
-      if(p.make!=="Universal"&&makesFound.indexOf(p.make)===-1)makesFound.push(p.make);
-      if(p.model!=="All"&&modelsFound.indexOf(p.model)===-1)modelsFound.push(p.model);
-    });
-    var yrs=matches.filter(function(p){return p.make!=="Universal";});
-    var yearRange=yrs.length?{from:Math.min.apply(null,yrs.map(function(p){return p.yf;})),to:Math.max.apply(null,yrs.map(function(p){return p.yt;}))}:null;
+
+    var vehKnown=!!(veh&&veh.make);
+    var modelKnown=!!(vehKnown&&veh.model&&veh.model!=="__other");
+    var makesFound=[],modelsFound=[],yearRange=null;
+    if(vehKnown){
+      makesFound=[veh.make];
+      if(modelKnown)modelsFound=[modelLabel(veh.model)];
+      if(veh.year)yearRange={from:veh.year,to:veh.year};
+    } else {
+      matches.forEach(function(p){
+        if(p.make!=="Universal"&&makesFound.indexOf(p.make)===-1)makesFound.push(p.make);
+        if(p.model!=="All"&&modelsFound.indexOf(p.model)===-1)modelsFound.push(p.model);
+      });
+      var yrs=matches.filter(function(p){return p.make!=="Universal";});
+      yearRange=yrs.length?{from:Math.min.apply(null,yrs.map(function(p){return p.yf;})),to:Math.max.apply(null,yrs.map(function(p){return p.yt;}))}:null;
+    }
 
     var hasDesc=kw.length>0;
     var label,guessName;
     if(hasDesc){label="AI MATCHED";guessName=S.desc;}
-    else if(vinMake){label="COMPATIBLE WITH YOUR VEHICLE";guessName=vinMake+" — parts in this vehicle's range";}
+    else if(vehKnown){label="COMPATIBLE WITH YOUR VEHICLE";guessName=vehLabel(veh)||veh.make;}
     else{label="PHOTO RECEIVED";guessName="Awaiting description";}
 
     var notes=[];
-    if(vinMake)notes.push("VIN suggests "+vinMake+".");
-    else if(S.vin)notes.push("Couldn't identify the make from this VIN — try adding a text description too.");
+    if(vehKnown&&modelKnown&&veh.vin&&veh.vin.length===17)notes.push("Your car: "+vehLabel(veh)+". Only parts that fit this vehicle are shown.");
+    else if(vehKnown)notes.push("Maker: "+veh.make+" — model not confirmed. Select your model in the vehicle box above for an exact fit.");
+    else if(S.vin)notes.push("Couldn't identify this VIN — try the full 17 characters, or describe the part.");
     if(S.imgB64&&!hasDesc)notes.push("We can't auto-read part photos yet (that needs a paid AI vision model) — type a short description above (e.g. \"fuel pump\") for an exact match, or submit the request below and our team will check your photo manually over WhatsApp.");
     else if(S.imgB64)notes.push("Photo attached — our team will visually confirm the exact match over WhatsApp.");
-    if(!hasDesc&&vinMake)notes.push("These are all parts compatible with your vehicle, not a specific match — add a description to narrow it down.");
-    if(matches.length===0)notes.push("No match in our current catalogue — submit a request below and we'll source it from our supplier network in Bahrain, UAE & KSA.");
+    if(!hasDesc&&vehKnown&&matches.length>0)notes.push("These are all the parts we have for your vehicle — add a part description to narrow it down.");
+    if(matches.length===0)notes.push("Nothing in our current stock fits"+(vehKnown?" your vehicle":"")+" — submit a request below and we'll source it from our supplier network in Bahrain, UAE & KSA.");
 
     var confidence;
     if(matches.length===0)confidence="low";
     else if(hasDesc&&matches.length<=2)confidence="high";
     else if(hasDesc)confidence="medium";
+    else if(modelKnown&&veh.vin&&veh.vin.length===17)confidence="high";   // vehicle fully identified from the VIN
     else confidence="low";
 
     S.aiRes={
@@ -1282,9 +1534,9 @@ function doAI(){
       makes:makesFound,models:modelsFound,yearRange:yearRange,
       notes:notes.join(" "),
     };
-    S.showRFQ=matches.length===0||!hasDesc;
+    S.showRFQ=matches.length===0||(!hasDesc&&!vehKnown);
     S.aiLoad=false;render();
-  },600);
+  }
 }
 
 // ── BULK PART LIST PARSING ──────────────────────────────────────────
@@ -1311,10 +1563,10 @@ function parseBulkLine(raw){
 function doBulkAI(){
   if(!S.bulkText||!S.bulkText.trim())return;
   S.aiLoad=true;S.bulkResults=null;render();
-  setTimeout(function(){
-    var pool=allParts();
-    var vinMake=S.vin?decodeVinMake(S.vin):null;
-    if(vinMake)pool=pool.filter(function(p){return p.make===vinMake||p.make==="Universal";});
+  prepareVehicle().then(function(){setTimeout(runBulk,500);});
+  function runBulk(){
+    var veh=currentVeh();
+    var pool=allParts().filter(function(p){return partFits(p,veh);});   // only parts that fit this vehicle
     var lines=S.bulkText.split("\n").map(function(l){return l.trim();}).filter(Boolean);
     var results=lines.map(function(raw){
       var parsed=parseBulkLine(raw);
@@ -1323,23 +1575,24 @@ function doBulkAI(){
       var best=null,bestScore=0;
       pool.forEach(function(p){
         var hay=(p.name+" "+p.nameAr+" "+p.cat+" "+p.make+" "+p.model+" "+p.brand).toLowerCase();
-        var s=0,hit=false;
-        kw.forEach(function(w){if(hay.indexOf(w)>-1){s+=2;hit=true;}});
-        if(vinMake&&p.make===vinMake)s+=1;
-        if(hit&&s>bestScore){bestScore=s;best=p;}
+        var sc=0,hit=false;
+        kw.forEach(function(w){if(hay.indexOf(w)>-1){sc+=2;hit=true;}});
+        if(veh&&p.make!=="Universal")sc+=1;
+        if(hit&&sc>bestScore){bestScore=sc;best=p;}
       });
       return{query:raw.trim(),desc:parsed.desc,qty:parsed.qty,match:best,selected:!!best};
     }).filter(Boolean);
     S.bulkResults=results;
     S.aiLoad=false;render();
-  },700);
+  }
 }
 
 function renderBulkResults(){
   var wrap=div("psec");
   var matched=S.bulkResults.filter(function(r){return r.match;});
   var missing=S.bulkResults.filter(function(r){return!r.match;});
-  wrap.appendChild(div("hlbanner",["⚡ "+matched.length+" of "+S.bulkResults.length+" parts found in our catalogue"]));
+  var gb2=priceGateBanner();if(gb2)wrap.appendChild(gb2);
+  wrap.appendChild(div("hlbanner",["⚡ "+matched.length+" of "+S.bulkResults.length+" parts found for your vehicle"+(S.bulkResults.length-matched.length>0?" — "+(S.bulkResults.length-matched.length)+" not in stock":"")]));
   var panel=div("panel");
   panel.appendChild(makePHead("📋","Match Results","Uncheck anything you don't need — matched items can be added to cart in one go"));
   var pb=div("pbody",null,{style:{padding:"0"}});
@@ -1352,7 +1605,10 @@ function renderBulkResults(){
       var info=div("",null,{style:{flex:"1",minWidth:"160px"}});
       info.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["You asked: "+r.query]));
       info.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.88rem"}},["✓ "+r.match.name]));
-      info.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--grn)",fontWeight:"600"}},[S.member?fmtBHD(r.match.waselPrice)+" per unit":"🔒 Login to view price"]));
+      if(S.member)info.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--grn)",fontWeight:"600"}},[fmtBHD(partnerPrice(r.match))+" per unit (partner price, excl. VAT)"]));
+      else if(S.lead)info.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--grn)",fontWeight:"600"}},[fmtBHD(r.match.waselPrice)+" per unit (excl. VAT)"]));
+      else{var lk2=el("div",{style:{fontSize:"0.75rem",color:"var(--red)",fontWeight:"700",cursor:"pointer"}},["🔓 See price & availability"]);lk2.addEventListener("click",openLeadGate);info.appendChild(lk2);}
+      if(canSeePrice()){var si2=stockInfo(r.match);info.appendChild(el("div",{className:si2.cls,style:{fontSize:"0.7rem"}},[si2.txt]));}
       row.appendChild(info);
       var qInp=el("input",{type:"number",min:"1",style:{width:"52px",padding:"4px 6px",fontSize:"0.78rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
       qInp.value=r.qty;
@@ -1377,7 +1633,7 @@ function renderBulkResults(){
       S.bulkResults.forEach(function(r){
         if(r.match&&r.selected){
           var ex=S.cart.find(function(i){return i.part.id===r.match.id;});
-          if(ex)ex.qty+=r.qty;else S.cart.push({part:r.match,qty:r.qty,margin:defMarkup(r.match.waselPrice)});
+          if(ex)ex.qty+=r.qty;else S.cart.push({part:r.match,qty:r.qty});
           added++;
         }
       });
@@ -1392,6 +1648,7 @@ function renderBulkResults(){
       });
       saveLog("wasel_rfqs",log);
       var lines=["Hi Wasel Auto, I need these parts:"];
+      var vh=currentVeh();if(vh&&vh.make)lines.push("Vehicle: "+vehLabel(vh));
       if(S.vin)lines.push("VIN: "+S.vin);
       missing.forEach(function(r,i){lines.push((i+1)+". "+r.desc+(r.qty>1?" x"+r.qty:""));});
       lines.push("","Please confirm availability and price.");
@@ -1402,7 +1659,7 @@ function renderBulkResults(){
   wrap.appendChild(actRow);
   return wrap;
 }
-function vinMakeSafe(){try{return decodeVinMake(S.vin)||"";}catch(e){return"";}}
+function vinMakeSafe(){try{var v=currentVeh();return v?v.make:"";}catch(e){return"";}}
 
 function makePHead(icon,title,sub){
   var ph=div("phead");
@@ -1506,64 +1763,15 @@ function renderSupplier(){
   return wrap;
 }
 
-// ── CUSTOMER-FACING INVOICE PREVIEW (no cost/margin ever shown) ──────
-function renderCustomerInvoicePreview(){
-  var wrap=div("cust-inv",null,{style:{marginTop:"1.2rem"}});
-  wrap.appendChild(div("cust-inv-topbar"));
-  var body=div("cust-inv-body");
-  var hdr=div("cust-inv-header");
-  var l=div("");
-  l.appendChild(el("div",{className:"cust-inv-garage-name"},[el("span",{},["Wasel"]),el("span",{style:{color:"var(--red)"}},[" Auto"])]));
-  l.appendChild(el("div",{className:"cust-inv-garage-sub"},["wasel-auto.vercel.app · +973 3384 4859"]));
-  l.appendChild(el("div",{className:"cust-inv-garage-sub"},["Manama, Kingdom of Bahrain"]));
-  hdr.appendChild(l);
-  var r=div("cust-inv-right");
-  r.appendChild(el("div",{className:"cust-inv-title"},["INVOICE"]));
-  r.appendChild(el("div",{className:"cust-inv-ref"},[S.invNum||S.invRef||today()]));
-  r.appendChild(el("div",{className:"cust-inv-ref"},[today()]));
-  hdr.appendChild(r);
-  body.appendChild(hdr);
-  var pp=div("pdf-parties");
-  var pt=div("");
-  pt.appendChild(el("div",{className:"pdf-party-lbl"},["Bill To"]));
-  pt.appendChild(el("div",{className:"pdf-party-name"},[S.invGarage.name||"Customer"]));
-  if(S.invGarage.phone)pt.appendChild(el("div",{className:"pdf-party-detail"},[S.invGarage.phone]));
-  if(S.invGarage.vehicle)pt.appendChild(el("div",{className:"pdf-party-detail"},["Vehicle: "+S.invGarage.vehicle]));
-  if(S.invGarage.plate)pt.appendChild(el("div",{className:"pdf-party-detail"},["Plate: "+S.invGarage.plate]));
-  pp.appendChild(pt);body.appendChild(pp);
-  var tbl=el("table",{className:"pdf-table"});
-  var thead=el("thead",{});var thr=el("tr",{});
-  ["Description","Qty","Unit Price BHD","Total BHD"].forEach(function(h){thr.appendChild(el("th",{},[h]));});
-  thead.appendChild(thr);tbl.appendChild(thead);
-  var tbody=el("tbody",{});
-  S.invItems.forEach(function(item){
-    var sell=item.cost+(item.margin||0);
-    var tr=el("tr",{});
-    [item.desc,item.qty,sell.toFixed(3),(sell*item.qty).toFixed(3)].forEach(function(v){tr.appendChild(el("td",{},[String(v)]));});
-    tbody.appendChild(tr);
-  });
-  tbl.appendChild(tbody);body.appendChild(tbl);
-  var total=S.invItems.reduce(function(a,i){return a+(i.cost+(i.margin||0))*i.qty;},0);
-  var totbox=el("div",{style:{display:"flex",justifyContent:"flex-end"}});
-  var tb=div("pdf-totals-box");
-  var gr=div("pdf-total-row grand");gr.appendChild(el("span",{},["TOTAL"]));gr.appendChild(el("span",{},[total.toFixed(3)+" BHD"]));tb.appendChild(gr);
-  totbox.appendChild(tb);body.appendChild(totbox);
-  if(S.invNote)body.appendChild(el("div",{style:{background:"var(--surf2)",borderRadius:"7px",padding:"0.75rem",fontSize:"0.78rem",color:"var(--mut)"}},[S.invNote]));
-  body.appendChild(el("div",{style:{marginTop:"1rem",fontSize:"0.68rem",color:"var(--mut)"}},["Thank you for your business."]));
-  wrap.appendChild(body);
-  wrap.appendChild(div("cust-inv-bottombar"));
-  return wrap;
-}
-
-// ── MY INVOICES TAB (garage invoice builder — margin hidden from customer) ──
+// ── MY INVOICES TAB (paid invoice from Wasel Auto — opened with quotation ref + secret PIN) ──
 function renderInvoices(){
   var wrap=div("inv-wrap");
   if(!S.member){wrap.appendChild(memberLockBanner());return wrap;}
   if(!S.invUnlocked){
     var lock=div("inv-lock");
     lock.appendChild(el("div",{style:{fontSize:"2.2rem",marginBottom:"0.6rem"}},["🧾"]));
-    lock.appendChild(el("h2",{style:{fontFamily:"'Barlow'",fontWeight:"900",color:"white",fontSize:"1.2rem",marginBottom:"0.5rem"}},[S.ar?"أداة فاتورة الورشة":"Garage Invoice Builder"]));
-    lock.appendChild(el("p",{style:{color:"#999",fontSize:"0.83rem",marginBottom:"1.2rem",lineHeight:"1.7"}},[S.ar?"أدخل رقم مرجع الفاتورة والرقم السري من وصل أوتو لبناء فاتورة عميلك":"Enter your Wasel Auto reference number and the secret Invoice PIN we send you after payment — your margin stays private."]));
+    lock.appendChild(el("h2",{style:{fontFamily:"'Barlow'",fontWeight:"900",color:"white",fontSize:"1.2rem",marginBottom:"0.5rem"}},[S.ar?"فواتيري":"My Invoices"]));
+    lock.appendChild(el("p",{style:{color:"#999",fontSize:"0.83rem",marginBottom:"1.2rem",lineHeight:"1.7"}},[S.ar?"أدخل رقم المرجع والرقم السري للفاتورة المرسل من وصل أوتو بعد الدفع":"Enter your Wasel Auto reference number and the secret Invoice PIN we send you after payment to open and download your invoice."]));
     var row=div("",null,{style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
     var refI=el("input",{className:"ref-input",placeholder:"e.g. QT-260804-8325"});refI.value=S.invRefInput;
     refI.addEventListener("input",function(){S.invRefInput=refI.value;});
@@ -1584,110 +1792,109 @@ function renderInvoices(){
       if(!found.invoicePin||found.invoicePin!==pin){S.invRefError="Incorrect Invoice PIN. Check the message Wasel Auto sent you.";render();return;}
       S.invRef=found.ref;S.invNum=found.invoiceNum||"";
       S.invGarage={name:found.garage.name||"",phone:found.garage.phone||"",vehicle:found.garage.vehicle||"",plate:""};
-      S.invItems=found.items.map(function(it){return{desc:it.name,cost:it.unitPrice,margin:it.margin!=null?it.margin:defMarkup(it.unitPrice),qty:it.qty};});
+      S.invNote=found.garage.notes||"";
       S.invRefError="";S.invUnlocked=true;render();
     }
     row.appendChild(btn("btn-gold","Unlock",unlockInv));
     lock.appendChild(row);
     if(S.invRefError)lock.appendChild(el("div",{className:"ref-error"},[S.invRefError]));
     var stepsWrap=div("",null,{style:{marginTop:"1.2rem",textAlign:"left"}});
-    ["Complete your parts order and pay via Benefit Pay","Wasel Auto confirms payment and sends your reference number + secret Invoice PIN","Enter both here to unlock your items — your margins from checkout carry over automatically","Adjust anything if needed — your customer only ever sees the final price"].forEach(function(s,i){
+    ["Complete your order and pay 100% via Benefit Pay","Wasel Auto confirms payment and sends your reference number + secret Invoice PIN","Enter both here to open your invoice","Download it as a PDF"].forEach(function(t,i){
       var st=div("ref-step");
       st.appendChild(el("div",{className:"ref-step-num"},[String(i+1)]));
-      st.appendChild(el("div",{},[s]));
+      st.appendChild(el("div",{},[t]));
       stepsWrap.appendChild(st);
     });
     lock.appendChild(stepsWrap);
     wrap.appendChild(lock);
     return wrap;
   }
-  wrap.appendChild(btn("btn-gh btn-sm","🔓 "+S.invRef+" — Change Reference",function(){S.invUnlocked=false;S.invRefInput="";S.invPinInput="";S.invItems=[];render();}));
+  var found2=getLog("wasel_quotations").find(function(q){return q.ref===S.invRef;});
+  wrap.appendChild(btn("btn-gh btn-sm","🔓 "+S.invRef+" — Change Reference",function(){S.invUnlocked=false;S.invRefInput="";S.invPinInput="";render();}));
+  if(!found2){wrap.appendChild(el("div",{className:"ref-error",style:{marginTop:"1rem"}},["This invoice could not be found on this device."]));return wrap;}
+  function bill(ph,val,key,extra){
+    var e=inp("",ph,val,function(v){S.invGarage[key]=v;},extra);
+    e.addEventListener("change",function(){render();});   // refresh the invoice preview when you leave the field
+    return e;
+  }
   var cp=div("panel",null,{style:{marginTop:"0.8rem"}});
-  cp.appendChild(makePHead("👤","Customer Details","Shown on the invoice sent to your customer"));
+  cp.appendChild(makePHead("👤","Bill To","Name and vehicle details printed on your invoice"));
   var cb2=div("pbody");
   var g0=div("fgrid");
-  var ig1=S.invGarage;
-  g0.appendChild(ig("Customer Name",inp("","Customer name",ig1.name,function(v){S.invGarage.name=v;})));
-  g0.appendChild(ig("Customer Phone",inp("","+973 XXXX XXXX",ig1.phone,function(v){S.invGarage.phone=v;},{type:"tel",dir:"ltr"})));
-  g0.appendChild(ig("Vehicle",inp("","e.g. Toyota Camry 2020",ig1.vehicle,function(v){S.invGarage.vehicle=v;})));
-  g0.appendChild(ig("Plate Number",inp("","e.g. 12345",ig1.plate,function(v){S.invGarage.plate=v;})));
+  g0.appendChild(ig("Name",bill("Name",S.invGarage.name,"name")));
+  g0.appendChild(ig("Phone",bill("+973 XXXX XXXX",S.invGarage.phone,"phone",{type:"tel",dir:"ltr"})));
+  g0.appendChild(ig("Vehicle",bill("e.g. Infiniti QX80 2014",S.invGarage.vehicle,"vehicle")));
+  g0.appendChild(ig("Plate Number",bill("e.g. 12345",S.invGarage.plate,"plate")));
   cb2.appendChild(g0);cp.appendChild(cb2);wrap.appendChild(cp);
-
-  var ip=div("panel");
-  ip.appendChild(makePHead("📦","Items & Your Markup","Cost is what you paid Wasel Auto — markup is your profit, never shown to the customer"));
-  var ib=div("pbody");
-  var immRow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.9rem",alignItems:"center",flexWrap:"wrap"}});
-  immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)",fontWeight:"600"}},["Markup:"]));
-  immRow.appendChild(btn(S.invMarginMode!=="overall"?"btn-r btn-sm":"btn-gh btn-sm","Per Item",function(){S.invMarginMode="item";render();}));
-  immRow.appendChild(btn(S.invMarginMode==="overall"?"btn-r btn-sm":"btn-gh btn-sm","Same Amount for All",function(){
-    S.invMarginMode="overall";
-    S.invItems.forEach(function(i){i.margin=S.invOverallMargin!=null?S.invOverallMargin:defMarkup(i.cost);});
-    render();
-  }));
-  if(S.invMarginMode==="overall"){
-    var iomInp=el("input",{type:"number",step:"0.001",style:{width:"72px",padding:"4px 7px",fontSize:"0.8rem",border:"1px solid var(--bdr)",borderRadius:"5px"}});
-    iomInp.value=(S.invOverallMargin!=null?S.invOverallMargin:20).toFixed(3);
-    iomInp.addEventListener("input",function(){
-      S.invOverallMargin=parseFloat(iomInp.value)||0;
-      S.invItems.forEach(function(i){i.margin=S.invOverallMargin;});
-      render();
-    });
-    immRow.appendChild(iomInp);
-    immRow.appendChild(el("span",{style:{fontSize:"0.75rem",color:"var(--mut)"}},["BHD added to every item"]));
-  }
-  ib.appendChild(immRow);
-  S.invItems.forEach(function(item,idx){
-    var row=div("",null,{style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 0.7fr auto",gap:"8px",alignItems:"center",marginBottom:"8px",paddingBottom:"8px",borderBottom:"1px solid var(--bdr)"}});
-    row.appendChild(inp("","Description",item.desc,function(v){item.desc=v;}));
-    row.appendChild(inp("","Cost",item.cost,function(v){item.cost=parseFloat(v)||0;render();},{type:"number",step:"0.001"}));
-    var mgInp=inp("","Markup (BHD)",(item.margin!=null?item.margin:defMarkup(item.cost)).toFixed(3),function(v){item.margin=parseFloat(v)||0;render();},{type:"number",step:"0.001"});
-    if(S.invMarginMode==="overall"){mgInp.disabled=true;mgInp.style.opacity="0.5";}
-    row.appendChild(mgInp);
-    row.appendChild(inp("","Qty",item.qty,function(v){item.qty=parseInt(v)||1;render();},{type:"number"}));
-    row.appendChild(btn("btn-gh btn-sm","🗑",function(){S.invItems.splice(idx,1);render();}));
-    ib.appendChild(row);
-  });
-  var addRow=div("",null,{style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 0.7fr auto",gap:"8px",alignItems:"center",marginTop:"6px"}});
-  addRow.appendChild(inp("","New item description",S.invNewDesc,function(v){S.invNewDesc=v;}));
-  addRow.appendChild(inp("","Cost",S.invNewCost,function(v){S.invNewCost=v;},{type:"number",step:"0.001"}));
-  addRow.appendChild(inp("","Markup (BHD)",S.invNewMargin,function(v){S.invNewMargin=v;},{type:"number",step:"0.001"}));
-  addRow.appendChild(inp("","Qty",S.invNewQty,function(v){S.invNewQty=v;},{type:"number"}));
-  addRow.appendChild(btn("btn-d btn-sm","＋",function(){
-    if(!S.invNewDesc||!S.invNewCost){showToast("Enter description and cost");return;}
-    S.invItems.push({desc:S.invNewDesc,cost:parseFloat(S.invNewCost)||0,margin:parseFloat(S.invNewMargin)||0,qty:parseInt(S.invNewQty)||1});
-    S.invNewDesc="";S.invNewCost="";S.invNewMargin="";S.invNewQty="1";render();
-  }));
-  ib.appendChild(addRow);
-  ip.appendChild(ib);wrap.appendChild(ip);
-
   var np=div("panel");
-  np.appendChild(makePHead("📝","Notes","Optional — shown on the customer invoice"));
+  np.appendChild(makePHead("📝","Notes","Optional — printed on the invoice"));
   var nb=div("pbody");
-  nb.appendChild(inp("","Any notes for the customer…",S.invNote,function(v){S.invNote=v;}));
-  np.appendChild(nb);wrap.appendChild(np);
-
-  var totalCost=S.invItems.reduce(function(a,i){return a+i.cost*i.qty;},0);
-  var totalSell=S.invItems.reduce(function(a,i){return a+(i.cost+(i.margin||0))*i.qty;},0);
-  wrap.appendChild(el("div",{className:"inv-profit-note"},["💰 Your cost: "+fmtBHD(totalCost)+"  →  Customer pays: "+fmtBHD(totalSell)+"  →  Your profit: "+fmtBHD(totalSell-totalCost)]));
-  wrap.appendChild(btn("btn-r btn-lg btn-full","⬇️ Download Customer Invoice PDF",function(){
-    if(S.invItems.length===0){showToast("Add at least one item");return;}
+  var ne=inp("","Any notes…",S.invNote,function(v){S.invNote=v;});
+  ne.addEventListener("change",function(){render();});
+  nb.appendChild(ne);np.appendChild(nb);wrap.appendChild(np);
+  // the invoice is the paid quotation: same items and prices, status PAID
+  var invDoc=Object.assign({},found2,{status:"paid",garage:Object.assign({},found2.garage,{name:S.invGarage.name||found2.garage.name,phone:S.invGarage.phone,vehicle:S.invGarage.vehicle,plate:S.invGarage.plate,notes:S.invNote})});
+  wrap.appendChild(btn("btn-r btn-lg btn-full","⬇️ Download Invoice PDF",function(){
     if(!pdfReady()){showToast("PDF tool still loading — please try again in a second");return;}
     showToast("Preparing your PDF…");
     try{
-      var doc=buildInvoicePDF(S.invNum||S.invRef,S.invGarage,S.invItems,S.invNote);
-      doc.save("Wasel-Auto-Invoice-"+(S.invNum||S.invRef||"customer")+".pdf");
+      var doc=buildQuotationPDF(invDoc);
+      doc.save("Wasel-Auto-Invoice-"+(invDoc.invoiceNum||invDoc.ref)+".pdf");
       showToast("✓ Downloaded");
     }catch(e){showToast("Couldn't build the PDF — try Print instead");}
   }));
-  wrap.appendChild(btn("btn-gh btn-sm","🖨️ Print instead",function(){
-    if(S.invItems.length===0){showToast("Add at least one item");return;}
-    window.print();
-  }));
-  wrap.appendChild(renderCustomerInvoicePreview());
+  wrap.appendChild(btn("btn-gh btn-sm","🖨️ Print instead",function(){window.print();}));
+  wrap.appendChild(renderQuotationDoc(invDoc));
   return wrap;
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────
+// ── CENTRAL RECORD (Google Sheet) for supplier/garage sign-ups ────────
+// Paste the same Google Apps Script web-app URL here that you put in loi.html.
+var WASEL_CLOUD_URL="https://script.google.com/macros/s/AKfycbywLRf9nd0cLCMGoANsJpO6y_QRm_slbLAzxJ8ml6ZkvYkxCevsFuthb7W-pulJBtYW/exec";
+flushLeads();   // re-send any car-owner contacts that could not be sent earlier
+function getLeadContacted(){try{return JSON.parse(localStorage.getItem("wasel_lead_contacted")||"{}");}catch(e){return{};}}
+function fetchCloudLeads(){
+  if(!WASEL_CLOUD_URL){S.cloudLeadsStatus="nourl";return;}
+  S.cloudLeadsStatus="loading";
+  fetch(WASEL_CLOUD_URL+"?key="+encodeURIComponent(S._adminKey||"")+"&type=leads").then(function(r){return r.json();}).then(function(j){
+    if(j&&j.ok&&j.type==="leads"){S.cloudLeads=j.rows||[];S.cloudLeadsStatus="ok";}
+    else if(j&&j.error==="unauthorized")S.cloudLeadsStatus="unauth";
+    else S.cloudLeadsStatus="old";
+    render();
+  }).catch(function(){S.cloudLeadsStatus="error";render();});
+}
+function mergedLeads(){
+  var contacted=getLeadContacted(),seen={},out=[];
+  (S.cloudLeads||[]).forEach(function(r){seen[r.id]=true;out.push({id:r.id,contact:String(r.contact||""),kind:r.kind,date:r.date,vin:r.vin||"",search:r.search||"",contacted:!!contacted[r.id]});});
+  getLog("wasel_b2c_leads").forEach(function(r){if(seen[r.id])return;out.push({id:r.id,contact:r.contact,kind:r.kind,date:r.date,vin:r.vin||"",search:r.search||"",contacted:!!contacted[r.id]});});
+  return out;
+}
+function getLoiContacted(){try{return JSON.parse(localStorage.getItem("wasel_loi_contacted")||"{}");}catch(e){return{};}}
+function fetchCloudLoi(){
+  if(!WASEL_CLOUD_URL){S.cloudLoiStatus="nourl";return;}
+  S.cloudLoiStatus="loading";
+  fetch(WASEL_CLOUD_URL+"?key="+encodeURIComponent(S._adminKey||"")).then(function(r){return r.json();}).then(function(j){
+    if(j&&j.ok){S.cloudLoi=j.rows||[];S.cloudLoiStatus="ok";}
+    else S.cloudLoiStatus=(j&&j.error==="unauthorized")?"unauth":"error";
+    render();
+  }).catch(function(){S.cloudLoiStatus="error";render();});
+}
+function mergedLoi(){
+  var contacted=getLoiContacted(),seen={},out=[];
+  (S.cloudLoi||[]).forEach(function(r){
+    seen[r.ref]=true;
+    out.push({ref:r.ref,typeLabel:r.typeLabel,company:r.company,cr:r.cr,contact:r.contact,role:r.role,phone:r.phone,email:r.email,location:r.location,date:r.date,details:r.details,contacted:!!contacted[r.ref]});
+  });
+  getLog("wasel_loi_registrations").forEach(function(r){
+    if(seen[r.ref])return;
+    var d=r.specific||{};
+    var details=Object.keys(d).filter(function(k){return d[k]&&(!Array.isArray(d[k])||d[k].length);}).map(function(k){return k+": "+(Array.isArray(d[k])?d[k].join(", "):d[k]);}).join(" · ");
+    out.push({ref:r.ref,typeLabel:r.typeLabel,company:r.company,cr:r.cr||"",contact:r.contact,role:r.role,phone:r.phone,email:r.email,location:r.location,date:r.date,details:details,contacted:!!(r.contacted||contacted[r.ref])});
+  });
+  return out;
+}
+
 function renderAdmin(){
   var wrap=div("admin-wrap");
   if(!S.adminAuth){
@@ -1699,7 +1906,7 @@ function renderAdmin(){
     pw.value=S.adminPw;
     pw.addEventListener("input",function(){S.adminPw=pw.value;});
     function tryAdmin(){
-      if(S.adminPw==="11Wasel@uto22"){S.adminAuth=true;S.adminPw="";render();}
+      if(S.adminPw==="11Wasel@uto22"){S.adminAuth=true;S._adminKey=S.adminPw;S.adminPw="";S.cloudLoiStatus="idle";S.cloudLeadsStatus="idle";render();}
       else{showToast("Incorrect password");}
     }
     pw.addEventListener("keydown",function(e){if(e.key==="Enter")tryAdmin();});
@@ -1710,7 +1917,7 @@ function renderAdmin(){
   }
   wrap.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}},[
     el("div",{style:{fontFamily:"'Barlow'",fontWeight:"900",fontSize:"1.2rem"}},["Admin Dashboard"]),
-    btn("btn-gh btn-sm","Logout",function(){S.adminAuth=false;render();}),
+    btn("btn-gh btn-sm","Logout",function(){S.adminAuth=false;S._adminKey="";S.cloudLoi=null;S.cloudLoiStatus="idle";S.cloudLeads=null;S.cloudLeadsStatus="idle";render();}),
   ]));
   var qLog=getLog("wasel_quotations");
   var pending=getLog("wasel_pending_parts");
@@ -1841,37 +2048,81 @@ function renderAdmin(){
   });
   rp.appendChild(rb);wrap.appendChild(rp);
 
-  var loiLog=getLog("wasel_loi_registrations");
+  if(S.cloudLoiStatus==="idle")fetchCloudLoi();
+  var loiAll=mergedLoi();
+  var newCount=loiAll.filter(function(r){return!r.contacted;}).length;
+  var statusTxt=S.cloudLoiStatus==="ok"?"✓ synced with central record":S.cloudLoiStatus==="loading"?"loading central record…":S.cloudLoiStatus==="nourl"?"⚠️ central record not set up — only registrations made on this device show here":S.cloudLoiStatus==="unauth"?"⚠️ central record rejected the admin password — check the key in your Google script":"⚠️ couldn't reach the central record — showing this device only";
   var lp=div("panel");
-  lp.appendChild(makePHead("🤝","LOI Registrations",loiLog.length+" supplier/garage sign-ups from wasel-auto.vercel.app/loi"));
-  var lb=div("pbody",null,{style:{padding:"0"}});
-  if(loiLog.length===0)lb.appendChild(el("div",{style:{padding:"1rem",color:"var(--mut)",fontSize:"0.85rem"}},["No registrations yet"]));
-  loiLog.forEach(function(r,idx){
+  lp.appendChild(makePHead("🤝","LOI Registrations (Suppliers & Garages)",loiAll.length+" total · "+newCount+" new · "+statusTxt));
+  var lb=div("pbody",null,{style:{padding:"0.8rem"}});
+  var lrow=div("",null,{style:{display:"flex",gap:"6px",marginBottom:"0.8rem"}});
+  lrow.appendChild(btn("btn-gh btn-sm","🔄 Refresh",function(){S.cloudLoiStatus="idle";S.cloudLeadsStatus="idle";render();}));
+  lb.appendChild(lrow);
+  if(loiAll.length===0)lb.appendChild(el("div",{style:{color:"var(--mut)",fontSize:"0.85rem"}},["No registrations yet"]));
+  loiAll.forEach(function(r){
+    var isSup=/supplier/i.test(r.typeLabel||"");
     var card=div("pending-card",null,{style:{borderColor:r.contacted?"var(--grn)":"#f59e0b"}});
     var top=div("",null,{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
     var left=div("");
-    left.appendChild(el("span",{className:"pdf-status-badge "+(r.type==="supplier"?"badge-quot":"badge-paid")},[r.typeLabel]));
-    left.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.9rem",marginTop:"4px"}},[r.company]));
-    left.appendChild(el("div",{style:{fontSize:"0.78rem",color:"var(--mut)"}},[r.contact+(r.role?" — "+r.role:"")+" · "+r.phone]));
+    left.appendChild(el("span",{className:"pdf-status-badge "+(isSup?"badge-quot":"badge-paid")},[r.typeLabel||""]));
+    left.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.9rem",marginTop:"4px"}},[r.company||""]));
+    if(r.cr)left.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--dark)",fontWeight:"600"}},["CR: "+r.cr]));
+    left.appendChild(el("div",{style:{fontSize:"0.78rem",color:"var(--mut)"}},[(r.contact||"")+(r.role?" — "+r.role:"")+" · "+(r.phone||"")]));
     if(r.email)left.appendChild(el("div",{style:{fontSize:"0.75rem",color:"var(--mut)"}},[r.email]));
-    left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"2px"}},[r.location+" · "+r.date+" · "+r.ref]));
-    var specKeys=Object.keys(r.specific||{});
-    var specText=specKeys.map(function(k){return r.specific[k]?k+": "+r.specific[k]:null;}).filter(Boolean).join(" · ");
-    if(specText)left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"4px",fontStyle:"italic"}},[specText]));
+    left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"2px"}},[(r.location||"")+" · "+(r.date||"")+" · "+r.ref]));
+    if(r.details)left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"4px",fontStyle:"italic"}},[r.details]));
     top.appendChild(left);
     top.appendChild(el("span",{style:{fontSize:"0.68rem",fontWeight:"700",color:r.contacted?"var(--grn)":"#f59e0b",whiteSpace:"nowrap"}},[r.contacted?"✓ Contacted":"⏳ New"]));
     card.appendChild(top);
     var acts=div("",null,{style:{display:"flex",gap:"6px",marginTop:"8px"}});
-    acts.appendChild(el("a",{href:"https://wa.me/"+r.phone.replace(/[^0-9]/g,"")+"?text="+encodeURIComponent("Hi "+r.contact+", thank you for registering with Wasel Auto (ref "+r.ref+"). Let's get you set up — "),target:"_blank",rel:"noopener",className:"btn btn-wa btn-sm"},["💬 WhatsApp"]));
+    acts.appendChild(el("a",{href:"https://wa.me/"+String(r.phone||"").replace(/[^0-9]/g,"")+"?text="+encodeURIComponent("Hi "+(r.contact||"")+", thank you for registering with Wasel Auto (ref "+r.ref+"). Let's get you set up — "),target:"_blank",rel:"noopener",className:"btn btn-wa btn-sm"},["💬 WhatsApp"]));
     if(!r.contacted){
       acts.appendChild(btn("btn-grn btn-sm","✓ Mark Contacted",function(){
-        loiLog[idx].contacted=true;saveLog("wasel_loi_registrations",loiLog);render();
+        var m=getLoiContacted();m[r.ref]=true;try{localStorage.setItem("wasel_loi_contacted",JSON.stringify(m));}catch(e){}
+        render();
       }));
     }
     card.appendChild(acts);
     lb.appendChild(card);
   });
   lp.appendChild(lb);wrap.appendChild(lp);
+
+  // ── B2C leads (car owners who shared a number/email to see prices) ──
+  if(S.cloudLeadsStatus==="idle")fetchCloudLeads();
+  var leadsAll=mergedLeads();
+  var leadNew=leadsAll.filter(function(r){return!r.contacted;}).length;
+  var lStatus=S.cloudLeadsStatus==="ok"?"✓ synced with central record":S.cloudLeadsStatus==="loading"?"loading central record…":S.cloudLeadsStatus==="nourl"?"⚠️ central record not set up — only this device":S.cloudLeadsStatus==="old"?"⚠️ update your Google script to see leads from other devices":S.cloudLeadsStatus==="unauth"?"⚠️ central record rejected the admin password":"⚠️ couldn't reach the central record — showing this device only";
+  var bp=div("panel");
+  bp.appendChild(makePHead("🚗","Car Owner Leads (B2C)",leadsAll.length+" total · "+leadNew+" new · "+lStatus));
+  var bb=div("pbody",null,{style:{padding:"0.8rem"}});
+  if(leadsAll.length===0)bb.appendChild(el("div",{style:{color:"var(--mut)",fontSize:"0.85rem"}},["No car-owner leads yet"]));
+  leadsAll.forEach(function(r){
+    var card=div("pending-card",null,{style:{borderColor:r.contacted?"var(--grn)":"#f59e0b"}});
+    var top=div("",null,{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}});
+    var left=div("");
+    left.appendChild(el("div",{style:{fontFamily:"'Barlow'",fontWeight:"700",fontSize:"0.9rem"}},[(r.kind==="email"?"✉️ ":"📱 ")+r.contact]));
+    left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"2px"}},[(r.date||"")+" · "+r.id]));
+    if(r.vin||r.search)left.appendChild(el("div",{style:{fontSize:"0.72rem",color:"var(--mut)",marginTop:"3px",fontStyle:"italic"}},["Was searching: "+[r.search,r.vin?("VIN "+r.vin):""].filter(Boolean).join(" · ")]));
+    top.appendChild(left);
+    top.appendChild(el("span",{style:{fontSize:"0.68rem",fontWeight:"700",color:r.contacted?"var(--grn)":"#f59e0b",whiteSpace:"nowrap"}},[r.contacted?"✓ Contacted":"⏳ New"]));
+    card.appendChild(top);
+    var acts=div("",null,{style:{display:"flex",gap:"6px",marginTop:"8px"}});
+    if(r.kind==="email"){
+      acts.appendChild(el("a",{href:"mailto:"+r.contact+"?subject="+encodeURIComponent("Your Wasel Auto parts enquiry"),className:"btn btn-gh btn-sm"},["✉️ Email"]));
+    } else {
+      var dg=String(r.contact).replace(/\D/g,"");if(dg.length===8)dg="973"+dg;
+      acts.appendChild(el("a",{href:"https://wa.me/"+dg+"?text="+encodeURIComponent("Hi, this is Wasel Auto — thanks for checking our prices. How can we help with your parts?"),target:"_blank",rel:"noopener",className:"btn btn-wa btn-sm"},["💬 WhatsApp"]));
+    }
+    if(!r.contacted){
+      acts.appendChild(btn("btn-grn btn-sm","✓ Mark Contacted",function(){
+        var m=getLeadContacted();m[r.id]=true;try{localStorage.setItem("wasel_lead_contacted",JSON.stringify(m));}catch(e){}
+        render();
+      }));
+    }
+    card.appendChild(acts);
+    bb.appendChild(card);
+  });
+  bp.appendChild(bb);wrap.appendChild(bp);
 
   return wrap;
 }
